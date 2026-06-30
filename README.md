@@ -1,9 +1,9 @@
 # RecentThink
 
 A production-ready SaaS AI application built on a **microservice** + **clean
-architecture** foundation. This repository currently contains only the project
-foundation — no business logic, authentication, database models, or API
-endpoints yet. It is structured to grow into AI agents and RAG workloads in
+architecture** foundation. Each service is an independent FastAPI application
+with a health endpoint, shared configuration, and a layered folder structure
+ready for authentication, business logic, AI workloads, and persistence in
 later phases.
 
 ## Tech stack
@@ -18,30 +18,153 @@ later phases.
 - **Ruff**, **Black**, **isort**, **mypy** for quality gates
 - **Docker Compose** for local infrastructure
 
+## Microservice architecture
+
+RecentThink is split into **independently deployable services**. Each service
+owns a bounded domain, runs on its own port, and communicates over HTTP (via
+the API Gateway in later phases). Shared code lives in the `shared/` package so
+configuration, logging, and cross-cutting concerns are not duplicated.
+
+```
+                    ┌─────────────┐
+                    │   Gateway   │  :8000
+                    │  (routing)  │
+                    └──────┬──────┘
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │ auth_service│ │ user_service│ │ admin_service│
+    │    :8001    │ │    :8002    │ │    :8003    │
+    └─────────────┘ └─────────────┘ └─────────────┘
+           ▼               ▼
+    ┌─────────────┐ ┌─────────────┐
+    │  ai_service │ │usage_service│
+    │    :8004    │ │    :8005    │
+    └─────────────┘ └─────────────┘
+```
+
+## Service responsibilities
+
+| Service | Port | Responsibility |
+|---------|------|----------------|
+| **gateway** | 8000 | Single entry point for clients; request routing and aggregation (later) |
+| **auth_service** | 8001 | Authentication, tokens, and session management (later) |
+| **user_service** | 8002 | User profiles, preferences, and account data (later) |
+| **admin_service** | 8003 | Admin dashboards, tenant management, and RBAC (later) |
+| **ai_service** | 8004 | AI agents, LLM orchestration, and RAG pipelines (later) |
+| **usage_service** | 8005 | Metering, quotas, and billing-related usage tracking (later) |
+
 ## Project structure
 
 ```
 recentthink/
-├── services/         # Individual microservices (added in later phases)
-├── shared/           # Code shared across services (config, utils, etc.)
-│   └── config.py     # Pydantic BaseSettings configuration
-├── infrastructure/   # IaC / deployment / container assets (later phases)
-├── docs/             # Project documentation
-├── scripts/          # Developer & operational scripts
-├── tests/            # Test suite
-├── .github/workflows # CI pipelines
-├── .env.example      # Sample environment configuration
-├── pyproject.toml    # Project metadata, dependencies & tool config
-├── docker-compose.yml# Local infrastructure (PostgreSQL)
-├── Makefile          # Common developer commands
-└── uv.lock           # Locked, reproducible dependency versions
+├── services/                    # Independent microservices
+│   ├── gateway/
+│   ├── auth_service/
+│   ├── user_service/
+│   ├── admin_service/
+│   ├── ai_service/
+│   └── usage_service/
+│       ├── app/                 # Application code (clean architecture layers)
+│       │   ├── api/             # HTTP routers
+│       │   ├── core/            # Service config (imports shared/config.py)
+│       │   ├── services/        # Business logic
+│       │   ├── repositories/  # Data access
+│       │   ├── models/          # Domain / ORM models
+│       │   ├── schemas/         # Pydantic request/response schemas
+│       │   ├── dependencies/    # FastAPI dependencies
+│       │   ├── middleware/      # HTTP middleware
+│       │   ├── utils/           # Service-specific helpers
+│       │   └── main.py          # Composition root only (wires routers, no business logic)
+│       └── tests/               # Service-level tests
+├── shared/                      # Code shared across all services
+│   ├── config.py                # Central Pydantic settings (single source of truth)
+│   ├── database/                # DB session & engine helpers (later)
+│   ├── exceptions/              # Shared exception types (later)
+│   ├── constants/               # App-wide constants (later)
+│   ├── schemas/                 # Cross-service schemas (later)
+│   ├── models/                  # Shared models (later)
+│   ├── security/                # Crypto & auth helpers (later)
+│   ├── utils/                   # Shared utilities (later)
+│   ├── logging/                 # Structured logging (later)
+│   └── common/                  # Miscellaneous shared code (later)
+├── infrastructure/              # Deployment & operations (placeholders)
+│   ├── docker/
+│   ├── nginx/
+│   ├── monitoring/
+│   ├── logging/
+│   ├── scripts/
+│   ├── terraform/
+│   └── kubernetes/
+├── tests/                       # Root-level shared tests (e.g. config)
+├── scripts/                     # Developer scripts
+├── .github/workflows/           # CI pipelines
+├── .env.example                 # Sample environment configuration
+├── pyproject.toml
+├── docker-compose.yml
+├── Makefile
+└── uv.lock
+```
+
+## Clean architecture layers
+
+> **Naming note:** the repo root `services/` folder holds **microservices**
+> (deployable apps). Inside each microservice, `app/services/` is the
+> **business-logic layer** (use cases). They are different things.
+
+Each microservice follows the same inward dependency flow:
+
+```
+HTTP Request
+    │
+    ▼
+api/            ← HTTP routers only (thin handlers)
+    │
+    ▼
+services/       ← Business logic and use-case orchestration
+    │
+    ▼
+repositories/   ← Data access (SQLAlchemy queries, later)
+    │
+    ▼
+models/         ← Domain / ORM models
+```
+
+Supporting layers:
+
+| Layer | Responsibility | Must NOT contain |
+|-------|----------------|------------------|
+| **`main.py`** | App factory, lifespan, router wiring | Business logic, SQL, HTTP handlers |
+| **`api/`** | Route definitions, call service layer | Business rules, DB access |
+| **`schemas/`** | Pydantic request/response DTOs | Business logic |
+| **`services/`** | **All business logic** | HTTP details, raw SQL |
+| **`repositories/`** | Persistence queries | Business rules |
+| **`dependencies/`** | FastAPI DI (DB session, auth context) | Business logic |
+| **`middleware/`** | Cross-cutting HTTP concerns | Domain logic |
+| **`core/`** | Service identity (`SERVICE_NAME`, `PORT`) + shared config import | Business logic |
+
+**Example (health check — already implemented):**
+
+```
+GET /
+  → api/health.py          calls get_health_status()
+  → services/health_service.py   builds the health payload
+  → schemas/health.py      defines HealthResponse
+```
+
+When you add features (e.g. user registration), the flow should be:
+
+```
+POST /users
+  → api/users.py
+  → services/user_service.py      (validate, orchestrate)
+  → repositories/user_repository.py
+  → models/user.py
 ```
 
 ## Getting started
 
 ### 1. Install uv
-
-uv is the package and environment manager for this project.
 
 **macOS / Linux:**
 
@@ -55,103 +178,119 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Alternatively: `pip install uv` or `brew install uv`. Verify with `uv --version`.
+Verify with `uv --version`.
 
 ### 2. Sync dependencies
-
-This creates a virtual environment in `.venv/` and installs all dependencies
-(including the `dev` group) exactly as pinned in `uv.lock`:
 
 ```bash
 uv sync --all-groups
 ```
 
-uv also installs the correct Python interpreter (3.13) automatically if needed.
-
-### 3. Activate the environment
-
-You usually don't need to activate it — prefix commands with `uv run`
-(e.g. `uv run pytest`). To activate it manually:
-
-**macOS / Linux:**
-
-```bash
-source .venv/bin/activate
-```
-
-**Windows (PowerShell):**
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-### 4. Configure environment variables
+### 3. Configure environment variables
 
 ```bash
 cp .env.example .env   # Windows: copy .env.example .env
 ```
 
+Never commit `.env` — it is listed in `.gitignore`. Only `.env.example` is tracked.
+
+### 4. Run a service individually
+
+From the repository root, `cd` into the service directory and start Uvicorn.
+Each service exposes `GET /` returning `{"service": "<name>", "status": "healthy"}`.
+
+**Gateway (port 8000):**
+
+```bash
+cd services/gateway
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Auth Service (port 8001):**
+
+```bash
+cd services/auth_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+**User Service (port 8002):**
+
+```bash
+cd services/user_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+```
+
+**Admin Service (port 8003):**
+
+```bash
+cd services/admin_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+```
+
+**AI Service (port 8004):**
+
+```bash
+cd services/ai_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+```
+
+**Usage Service (port 8005):**
+
+```bash
+cd services/usage_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+```
+
+On macOS/Linux you can also use Makefile shortcuts: `make run-gateway`, `make run-auth`, etc.
+
+Verify health:
+
+```bash
+curl http://localhost:8001/
+# {"service":"auth_service","status":"healthy"}
+```
+
+## Running tests
+
+Run the full suite from the repository root:
+
+```bash
+uv run pytest
+```
+
+Run tests for a single service:
+
+```bash
+uv run pytest services/auth_service/tests/
+```
+
+Each service includes a smoke test that asserts `GET /` returns HTTP 200.
+
 ## Common commands
 
-You can use the `Makefile` (on macOS/Linux or Git Bash/WSL) or run the `uv`
-commands directly (works everywhere, including Windows PowerShell).
+| Command | Description |
+|---------|-------------|
+| `uv run pytest` | Run all tests |
+| `uv run ruff check .` | Lint |
+| `uv run black .` | Format |
+| `uv run mypy shared services tests` | Type-check |
+| `make check` | All quality gates (Unix) |
+| `docker compose up -d postgres` | Start local PostgreSQL |
 
-### Run the tests
+## What is implemented in this phase
 
-```bash
-uv run pytest          # or: make test
-```
+- Six independent FastAPI applications with health endpoints
+- Clean-architecture folder layout per service
+- Shared configuration via `shared/config.py`
+- Infrastructure directory placeholders
+- Sample pytest per service
+- Updated `.gitignore` (`.env` is never committed)
 
-### Run tests with coverage
+## Intentionally not implemented yet
 
-```bash
-uv run pytest --cov-report=html   # or: make coverage
-```
+- Authentication, JWT, and RBAC
+- Database models, SQLAlchemy, and Alembic migrations
+- Dockerfiles and Kubernetes manifests
+- Business logic, AI logic, and API Gateway routing
 
-An HTML report is written to `htmlcov/index.html`.
-
-### Lint with Ruff
-
-```bash
-uv run ruff check .    # or: make lint
-uv run ruff check --fix .
-```
-
-### Format with Black (and isort)
-
-```bash
-uv run isort .         # sort imports
-uv run black .         # format code        (or: make format)
-uv run black --check . # verify only        (or: make format-check)
-```
-
-### Type-check with mypy
-
-```bash
-uv run mypy shared services tests   # or: make typecheck
-```
-
-### Run everything (quality gates)
-
-```bash
-make check
-```
-
-### Local database
-
-```bash
-docker compose up -d postgres   # or: make db-up
-docker compose down             # or: make db-down
-```
-
-## Notes for this phase
-
-The following are intentionally **not** implemented yet and will arrive in
-later phases:
-
-- Authentication & business logic
-- Database models
-- Alembic migrations
-- Dockerfiles for services
-- API endpoints
-- The microservices themselves
+These arrive in subsequent phases.

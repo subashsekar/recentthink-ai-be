@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*.pyc
 *$py.class
 *.so
 
@@ -20,6 +21,7 @@ ENV/
 # uv
 # (uv.lock IS committed; the cache and venv are not)
 .uv/
+uv.lock.bak
 
 # Environment variables
 .env
@@ -50,3 +52,6 @@ logs/
 
 # Docker
 *.pid
+docker-data/
+postgres_data/
+volumes/

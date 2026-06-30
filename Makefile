@@ -3,7 +3,8 @@
 # `uv` commands directly (see the README).
 
 .DEFAULT_GOAL := help
-.PHONY: help install sync run lint format format-check typecheck test coverage check clean db-up db-down
+.PHONY: help install sync lint format format-check typecheck test coverage check clean db-up db-down
+.PHONY: run-gateway run-auth run-user run-admin run-ai run-usage
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -15,8 +16,23 @@ install: ## Create the venv and install all (incl. dev) dependencies
 sync: ## Sync the environment to match uv.lock exactly
 	uv sync --all-groups --frozen
 
-run: ## Run the (placeholder) ASGI app with hot reload
-	uv run uvicorn shared.config:settings --reload
+run-gateway: ## Run the API Gateway on port 8000
+	cd services/gateway && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+run-auth: ## Run the Auth Service on port 8001
+	cd services/auth_service && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+run-user: ## Run the User Service on port 8002
+	cd services/user_service && uv run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+
+run-admin: ## Run the Admin Service on port 8003
+	cd services/admin_service && uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+
+run-ai: ## Run the AI Service on port 8004
+	cd services/ai_service && uv run uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+
+run-usage: ## Run the Usage Service on port 8005
+	cd services/usage_service && uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
 
 lint: ## Lint the codebase with Ruff
 	uv run ruff check .

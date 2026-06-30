@@ -96,17 +96,22 @@ plugins = ["pydantic.mypy"]
 module = ["tests.*"]
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = ["app", "app.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # pytest + coverage
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests"]
+testpaths = ["tests", "services"]
 asyncio_mode = "auto"
 addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+    "--import-mode=importlib",
     "--cov=shared",
     "--cov=services",
     "--cov-report=term-missing",
