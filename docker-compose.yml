@@ -1,0 +1,26 @@
+# Local development infrastructure for RecentThink.
+# Application service Dockerfiles will be added in a later phase; for now this
+# only provisions the PostgreSQL database the services will connect to.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: recentthink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: recentthink
+      POSTGRES_PASSWORD: recentthink
+      POSTGRES_DB: recentthink
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recentthink -d recentthink"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: recentthink-postgres-data
