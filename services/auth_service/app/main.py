@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.database import router as database_router
 from app.api.health import router as health_router
 
 APP_VERSION = "0.1.0"
@@ -15,9 +16,7 @@ APP_VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
-    # Startup placeholder
     yield
-    # Shutdown placeholder
 
 
 app = FastAPI(
@@ -26,4 +25,5 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(database_router)
 app.include_router(health_router)

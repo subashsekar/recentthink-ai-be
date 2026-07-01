@@ -1,1 +1,1 @@
-"""Shared utility functions (to be implemented)."""
+"""Shared cross-cutting utilities."""

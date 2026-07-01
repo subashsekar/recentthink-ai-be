@@ -1,0 +1,50 @@
+# Virtual environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Secrets and local env (loaded at runtime via compose env_file)
+.env
+.env.*
+
+# Git and IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Build artefacts
+dist/
+build/
+*.egg-info/
+
+# Docker data
+docker-data/
+postgres_data/
+volumes/
+
+# Tests (not needed in production image)
+tests/
+**/tests/
+
+# Other services (auth-service image only needs shared + auth_service)
+services/gateway/
+services/user_service/
+services/admin_service/
+services/ai_service/
+services/usage_service/
+
+# Infrastructure placeholders
+infrastructure/
+
+# Documentation
+*.md
+!README.md
