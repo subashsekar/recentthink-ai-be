@@ -15,9 +15,7 @@ APP_VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
-    # Startup placeholder
     yield
-    # Shutdown placeholder
 
 
 app = FastAPI(

@@ -1,1 +1,1 @@
-"""Common helpers shared across microservices (to be implemented)."""
+"""Miscellaneous shared helpers."""

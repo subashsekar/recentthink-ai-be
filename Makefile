@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install sync lint format format-check typecheck test coverage check clean db-up db-down
-.PHONY: run-gateway run-auth run-user run-admin run-ai run-usage
+.PHONY: run-gateway run-auth run-user run-admin run-ai run-usage migrate seed-admin
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -57,10 +57,16 @@ coverage: ## Run tests and produce a coverage report
 check: lint format-check typecheck test ## Run all quality gates
 
 db-up: ## Start the local PostgreSQL container
-	docker compose up -d postgres
+	docker compose --profile local-db up -d postgres
 
 db-down: ## Stop and remove local infrastructure containers
-	docker compose down
+	docker compose --profile local-db down
+
+migrate: ## Apply database migrations (Alembic upgrade head)
+	uv run alembic upgrade head
+
+seed-admin: ## Seed the default system administrator account
+	uv run python scripts/seed_admin.py
 
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage dist build

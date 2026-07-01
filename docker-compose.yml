@@ -1,25 +1,96 @@
-# Local development infrastructure for RecentThink.
-# Application service Dockerfiles will be added in a later phase; for now this
-# only provisions the PostgreSQL database the services will connect to.
+# RecentThink local development stack.
+#
+# Auth service only (e.g. DATABASE_URL points to Supabase):
+#   docker compose up --build auth-service
+#
+# Auth service + local PostgreSQL:
+#   docker compose --profile local-db up --build
+#
+# Environment variables are loaded from `.env` at the project root.
+# Copy `.env.example` to `.env` and adjust values before starting.
+
+name: recentthink
 
 services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth_service/Dockerfile
+    container_name: recentthink-auth-service
+    restart: unless-stopped
+    ports:
+      - "${AUTH_SERVICE_PORT:-8001}:8001"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Default targets the compose postgres service; override in .env for Supabase.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://recentthink:recentthink@postgres:5432/recentthink}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    volumes:
+      # Hot reload: mount source over the image copy.
+      - ./shared:/app/shared
+      - ./services/auth_service:/app/services/auth_service
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8001
+      --reload
+      --reload-dir /app/services/auth_service
+      --reload-dir /app/shared
+    networks:
+      - recentthink-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   postgres:
+    profiles:
+      - local-db
     image: postgres:16-alpine
     container_name: recentthink-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: recentthink
-      POSTGRES_PASSWORD: recentthink
-      POSTGRES_DB: recentthink
+      POSTGRES_USER: ${POSTGRES_USER:-recentthink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recentthink}
+      POSTGRES_DB: ${POSTGRES_DB:-recentthink}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U recentthink -d recentthink"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-recentthink} -d ${POSTGRES_DB:-recentthink}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - recentthink-network
+
+networks:
+  recentthink-network:
+    name: recentthink-network
+    driver: bridge
 
 volumes:
   postgres_data:

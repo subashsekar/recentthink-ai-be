@@ -1,1 +1,1 @@
-"""Application-wide constants (to be implemented)."""
+"""Application-wide constants."""

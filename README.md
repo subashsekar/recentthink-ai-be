@@ -1,29 +1,31 @@
 # RecentThink
 
-A production-ready SaaS AI application built on a **microservice** + **clean
-architecture** foundation. Each service is an independent FastAPI application
-with a health endpoint, shared configuration, and a layered folder structure
-ready for authentication, business logic, AI workloads, and persistence in
-later phases.
+A production-ready SaaS AI platform built as a **microservice monorepo** with **clean architecture**. Each service is an independent FastAPI application sharing configuration, database utilities, and cross-cutting concerns through the `shared/` package.
 
-## Tech stack
+**Phase 1 status:** Foundation complete — health endpoints, shared config, SQLAlchemy models, Alembic migrations, repository layer, Docker, and CI are in place. JWT authentication, API Gateway routing, and business HTTP APIs arrive in later phases.
 
-- **Python 3.13**
-- **FastAPI** + **Uvicorn**
-- **SQLAlchemy 2.x** + **Alembic** (to be configured later)
-- **PostgreSQL** (via `psycopg`)
-- **Pydantic Settings** for configuration
-- **uv** for dependency & environment management
-- **Pytest** (+ coverage) for testing
-- **Ruff**, **Black**, **isort**, **mypy** for quality gates
-- **Docker Compose** for local infrastructure
+---
 
-## Microservice architecture
+## Project Overview
 
-RecentThink is split into **independently deployable services**. Each service
-owns a bounded domain, runs on its own port, and communicates over HTTP (via
-the API Gateway in later phases). Shared code lives in the `shared/` package so
-configuration, logging, and cross-cutting concerns are not duplicated.
+RecentThink is designed to scale from a local development setup to a multi-service cloud deployment. The repository contains six deployable microservices plus shared infrastructure code:
+
+| Service | Port | Responsibility |
+|---------|------|----------------|
+| **gateway** | 8000 | Single entry point for clients; request routing (later) |
+| **auth_service** | 8001 | Authentication, users, admins, tokens (in progress) |
+| **user_service** | 8002 | User profiles and account data (later) |
+| **admin_service** | 8003 | Admin dashboards and RBAC (later) |
+| **ai_service** | 8004 | AI agents, LLM orchestration, RAG (later) |
+| **usage_service** | 8005 | Metering, quotas, billing usage (later) |
+
+The **auth_service** is the most developed service today: it owns `User` and `Admin` ORM models, repositories, Alembic migrations, and a database connectivity endpoint.
+
+---
+
+## Architecture
+
+### High-level diagram
 
 ```
                     ┌─────────────┐
@@ -35,82 +37,21 @@ configuration, logging, and cross-cutting concerns are not duplicated.
     ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
     │ auth_service│ │ user_service│ │ admin_service│
     │    :8001    │ │    :8002    │ │    :8003    │
-    └─────────────┘ └─────────────┘ └─────────────┘
-           ▼               ▼
+    └──────┬──────┘ └─────────────┘ └─────────────┘
+           │
+           ▼
     ┌─────────────┐ ┌─────────────┐
     │  ai_service │ │usage_service│
     │    :8004    │ │    :8005    │
     └─────────────┘ └─────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────┐
+    │  PostgreSQL (local or Supabase) │
+    └─────────────────────────────────┘
 ```
 
-## Service responsibilities
-
-| Service | Port | Responsibility |
-|---------|------|----------------|
-| **gateway** | 8000 | Single entry point for clients; request routing and aggregation (later) |
-| **auth_service** | 8001 | Authentication, tokens, and session management (later) |
-| **user_service** | 8002 | User profiles, preferences, and account data (later) |
-| **admin_service** | 8003 | Admin dashboards, tenant management, and RBAC (later) |
-| **ai_service** | 8004 | AI agents, LLM orchestration, and RAG pipelines (later) |
-| **usage_service** | 8005 | Metering, quotas, and billing-related usage tracking (later) |
-
-## Project structure
-
-```
-recentthink/
-├── services/                    # Independent microservices
-│   ├── gateway/
-│   ├── auth_service/
-│   ├── user_service/
-│   ├── admin_service/
-│   ├── ai_service/
-│   └── usage_service/
-│       ├── app/                 # Application code (clean architecture layers)
-│       │   ├── api/             # HTTP routers
-│       │   ├── core/            # Service config (imports shared/config.py)
-│       │   ├── services/        # Business logic
-│       │   ├── repositories/  # Data access
-│       │   ├── models/          # Domain / ORM models
-│       │   ├── schemas/         # Pydantic request/response schemas
-│       │   ├── dependencies/    # FastAPI dependencies
-│       │   ├── middleware/      # HTTP middleware
-│       │   ├── utils/           # Service-specific helpers
-│       │   └── main.py          # Composition root only (wires routers, no business logic)
-│       └── tests/               # Service-level tests
-├── shared/                      # Code shared across all services
-│   ├── config.py                # Central Pydantic settings (single source of truth)
-│   ├── database/                # DB session & engine helpers (later)
-│   ├── exceptions/              # Shared exception types (later)
-│   ├── constants/               # App-wide constants (later)
-│   ├── schemas/                 # Cross-service schemas (later)
-│   ├── models/                  # Shared models (later)
-│   ├── security/                # Crypto & auth helpers (later)
-│   ├── utils/                   # Shared utilities (later)
-│   ├── logging/                 # Structured logging (later)
-│   └── common/                  # Miscellaneous shared code (later)
-├── infrastructure/              # Deployment & operations (placeholders)
-│   ├── docker/
-│   ├── nginx/
-│   ├── monitoring/
-│   ├── logging/
-│   ├── scripts/
-│   ├── terraform/
-│   └── kubernetes/
-├── tests/                       # Root-level shared tests (e.g. config)
-├── scripts/                     # Developer scripts
-├── .github/workflows/           # CI pipelines
-├── .env.example                 # Sample environment configuration
-├── pyproject.toml
-├── docker-compose.yml
-├── Makefile
-└── uv.lock
-```
-
-## Clean architecture layers
-
-> **Naming note:** the repo root `services/` folder holds **microservices**
-> (deployable apps). Inside each microservice, `app/services/` is the
-> **business-logic layer** (use cases). They are different things.
+### Clean architecture (per service)
 
 Each microservice follows the same inward dependency flow:
 
@@ -118,13 +59,13 @@ Each microservice follows the same inward dependency flow:
 HTTP Request
     │
     ▼
-api/            ← HTTP routers only (thin handlers)
+api/            ← HTTP routers (thin handlers)
     │
     ▼
 services/       ← Business logic and use-case orchestration
     │
     ▼
-repositories/   ← Data access (SQLAlchemy queries, later)
+repositories/   ← Data access (SQLAlchemy queries)
     │
     ▼
 models/         ← Domain / ORM models
@@ -132,39 +73,197 @@ models/         ← Domain / ORM models
 
 Supporting layers:
 
-| Layer | Responsibility | Must NOT contain |
-|-------|----------------|------------------|
-| **`main.py`** | App factory, lifespan, router wiring | Business logic, SQL, HTTP handlers |
-| **`api/`** | Route definitions, call service layer | Business rules, DB access |
-| **`schemas/`** | Pydantic request/response DTOs | Business logic |
-| **`services/`** | **All business logic** | HTTP details, raw SQL |
-| **`repositories/`** | Persistence queries | Business rules |
-| **`dependencies/`** | FastAPI DI (DB session, auth context) | Business logic |
-| **`middleware/`** | Cross-cutting HTTP concerns | Domain logic |
-| **`core/`** | Service identity (`SERVICE_NAME`, `PORT`) + shared config import | Business logic |
+| Layer | Responsibility |
+|-------|----------------|
+| `main.py` | App factory, lifespan, router wiring only |
+| `schemas/` | Pydantic request/response DTOs |
+| `dependencies/` | FastAPI dependency injection (DB session, repos) |
+| `middleware/` | Cross-cutting HTTP concerns |
+| `core/` | Service identity (`SERVICE_NAME`, `PORT`) |
+| `database/` | Re-exports from `shared.database` (auth_service) |
 
-**Example (health check — already implemented):**
+**Naming note:** the repo root `services/` folder holds **microservices** (deployable apps). Inside each microservice, `app/services/` is the **business-logic layer**. They are different concepts.
+
+### Shared package
+
+Code used by two or more services lives in `shared/` at the repository root — configuration, database session, logging, security helpers, base models, and shared schemas (e.g. health responses).
+
+### Database migrations
+
+Alembic runs at the **repository root** (not per-service). `migrations/env.py` imports ORM models from `auth_service` because that service currently owns the schema. As other services gain their own tables, their models must be registered in `migrations/env.py`.
+
+---
+
+## Folder Structure
 
 ```
-GET /
-  → api/health.py          calls get_health_status()
-  → services/health_service.py   builds the health payload
-  → schemas/health.py      defines HealthResponse
+recentthink-ai-be/
+├── .github/workflows/       # CI pipelines (lint, type-check, test)
+├── infrastructure/          # Deployment placeholders (k8s, nginx, terraform)
+├── migrations/              # Alembic migrations (root-level)
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+├── scripts/                 # Developer utilities (seed, scaffold)
+├── services/                # Independent microservices
+│   ├── gateway/
+│   ├── auth_service/        # Dockerfile, domain models, repositories
+│   ├── user_service/
+│   ├── admin_service/
+│   ├── ai_service/
+│   └── usage_service/
+├── shared/                  # Cross-service code
+│   ├── config.py
+│   ├── database/
+│   ├── exceptions/
+│   ├── logging/
+│   ├── models/
+│   ├── schemas/
+│   └── security/
+├── tests/                   # Root-level tests (config, CRUD integration)
+├── .env.example
+├── alembic.ini
+├── docker-compose.yml
+├── Makefile
+├── pyproject.toml
+└── uv.lock
 ```
 
-When you add features (e.g. user registration), the flow should be:
+### Per-service layout
+
+Every microservice follows this structure:
 
 ```
-POST /users
-  → api/users.py
-  → services/user_service.py      (validate, orchestrate)
-  → repositories/user_repository.py
-  → models/user.py
+services/<name>/
+├── app/
+│   ├── main.py              # Composition root
+│   ├── api/                 # HTTP route handlers
+│   ├── core/                # SERVICE_NAME, PORT, config import
+│   ├── services/            # Business logic layer
+│   ├── repositories/        # Data access layer
+│   ├── models/              # SQLAlchemy ORM models
+│   ├── schemas/             # Pydantic DTOs
+│   ├── dependencies/        # FastAPI DI providers
+│   ├── middleware/          # HTTP middleware
+│   ├── database/            # DB re-exports (auth_service only)
+│   └── utils/               # Service-specific helpers
+├── tests/
+└── Dockerfile               # auth_service only; deps from root pyproject.toml
 ```
 
-## Getting started
+---
 
-### 1. Install uv
+## Folder Reference
+
+### Repository root
+
+| Path | Purpose |
+|------|---------|
+| `alembic.ini` | Alembic configuration; `script_location = migrations` |
+| `docker-compose.yml` | Local dev stack: auth-service + optional PostgreSQL |
+| `pyproject.toml` | Project metadata, dependencies, tool config |
+| `uv.lock` | Locked dependency versions |
+| `Makefile` | Developer shortcuts (run, test, migrate, docker) |
+| `.env.example` | Template for environment variables (copy to `.env`) |
+
+### `migrations/`
+
+| Path | Purpose |
+|------|---------|
+| `env.py` | Alembic runtime: loads `DATABASE_URL`, registers ORM metadata |
+| `script.py.mako` | Template for new revision files |
+| `versions/` | One Python file per schema migration |
+
+### `scripts/`
+
+| Script | Purpose |
+|--------|---------|
+| `seed_admin.py` | Inserts default admin (`admin@recentthink.ai`) if missing |
+| `scaffold_layers.py` | One-off generator for empty layer `__init__.py` files |
+| `align_service_layers.py` | One-off synchroniser for health boilerplate |
+
+### `shared/`
+
+| Path | Purpose |
+|------|---------|
+| `config.py` | Central Pydantic `Settings` — single source of truth for env vars |
+| `database/` | SQLAlchemy `Base`, engine, `SessionLocal`, `get_db()` dependency |
+| `models/` | Abstract base ORM mixins (`TimestampMixin`, `BaseModel`) |
+| `exceptions/` | Shared repository errors (`DuplicateEmailError`, etc.) |
+| `logging/` | Structured logger factory (`get_logger`) |
+| `schemas/` | Cross-service Pydantic schemas (`HealthResponse`) |
+| `security/` | Password hashing (`hash_password`, `verify_password`) |
+| `constants/` | App-wide constants (reserved for future use) |
+| `utils/` | Shared utility functions (reserved for future use) |
+| `common/` | Miscellaneous shared helpers (reserved for future use) |
+
+### `services/<name>/app/` layers
+
+| Path | Purpose |
+|------|---------|
+| `api/` | FastAPI routers — parse HTTP, call service layer, return schemas |
+| `services/` | Business logic — validation, orchestration, domain rules |
+| `repositories/` | Persistence — SQLAlchemy queries, no business rules |
+| `models/` | SQLAlchemy ORM table definitions |
+| `schemas/` | Pydantic models for request/response serialization |
+| `dependencies/` | FastAPI `Depends()` providers (DB session, repositories) |
+| `middleware/` | Request/response middleware (auth, logging, CORS — later) |
+| `core/` | Service-specific constants (`SERVICE_NAME`, `PORT`) |
+| `database/` | Thin re-export of `shared.database` (auth_service) |
+| `utils/` | Helpers that belong only to this service |
+| `main.py` | Creates the FastAPI app and mounts routers |
+
+### `infrastructure/`
+
+Placeholder directories for future deployment assets: Docker configs, Kubernetes manifests, Nginx, monitoring, Terraform.
+
+### `tests/`
+
+| Path | Purpose |
+|------|---------|
+| `test_config.py` | Shared settings smoke tests |
+| `crud/` | Integration tests for auth_service repositories |
+
+---
+
+## Technology Stack
+
+| Category | Technology |
+|----------|------------|
+| Language | Python 3.13 |
+| Web framework | FastAPI + Uvicorn |
+| ORM | SQLAlchemy 2.x |
+| Migrations | Alembic |
+| Database | PostgreSQL (local Docker or Supabase) |
+| Driver | psycopg 3 |
+| Configuration | Pydantic Settings + python-dotenv |
+| Password hashing | bcrypt |
+| Package manager | uv |
+| Testing | pytest + pytest-cov + httpx |
+| Linting / formatting | Ruff, Black, isort |
+| Type checking | mypy |
+| Containers | Docker + Docker Compose |
+| CI | GitHub Actions |
+
+---
+
+## Installation
+
+### Prerequisites
+
+- Python 3.13
+- [uv](https://docs.astral.sh/uv/) package manager
+- PostgreSQL (local via Docker, or Supabase)
+- Docker Desktop (optional, for containerised development)
+
+### 1. Clone the repository
+
+```bash
+git clone <repository-url>
+cd recentthink-ai-be
+```
+
+### 2. Install uv
 
 **macOS / Linux:**
 
@@ -178,119 +277,259 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Verify with `uv --version`.
-
-### 2. Sync dependencies
+### 3. Install dependencies
 
 ```bash
 uv sync --all-groups
 ```
 
-### 3. Configure environment variables
+This creates a `.venv` virtual environment and installs all runtime and dev dependencies from `uv.lock`.
+
+### 4. Configure environment
 
 ```bash
-cp .env.example .env   # Windows: copy .env.example .env
+cp .env.example .env        # Windows: copy .env.example .env
 ```
 
-Never commit `.env` — it is listed in `.gitignore`. Only `.env.example` is tracked.
+Edit `.env` with your database URL and secrets. See [Environment Variables](#environment-variables) below.
 
-### 4. Run a service individually
+### 5. Start PostgreSQL
 
-From the repository root, `cd` into the service directory and start Uvicorn.
-Each service exposes `GET /` returning `{"service": "<name>", "status": "healthy"}`.
-
-**Gateway (port 8000):**
+**Option A — Docker (recommended for local dev):**
 
 ```bash
-cd services/gateway
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+docker compose --profile local-db up -d postgres
 ```
 
-**Auth Service (port 8001):**
+**Option B — Supabase:** set `DATABASE_URL` in `.env` to your Supabase connection string. No local postgres needed.
+
+### 6. Run migrations
+
+```bash
+uv run alembic upgrade head
+# or: make migrate
+```
+
+### 7. Seed the default admin (optional)
+
+```bash
+uv run python scripts/seed_admin.py
+# or: make seed-admin
+```
+
+Default credentials: `admin@recentthink.ai` / password from `SEED_ADMIN_PASSWORD` (default `Admin@12345`).
+
+### 8. Verify
+
+```bash
+uv run pytest
+```
+
+---
+
+## Environment Variables
+
+All variables are defined in `shared/config.py` and loaded from the process environment and an optional `.env` file. Copy `.env.example` to `.env` and adjust.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ENVIRONMENT` | No | `local` | Deployment environment (`local`, `development`, `staging`, `production`, `test`) |
+| `LOG_LEVEL` | No | `INFO` | Logging level |
+| `DATABASE_URL` | No | `postgresql+psycopg://recentthink:recentthink@localhost:5432/recentthink` | PostgreSQL connection string |
+| `SECRET_KEY` | Yes (prod) | `change-me-in-production` | Application secret for signing tokens |
+| `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `30` | Access token lifetime |
+| `OPENAI_API_KEY` | No | — | OpenAI API key (future) |
+| `GOOGLE_API_KEY` | No | — | Google API key (future) |
+| `SEED_ADMIN_PASSWORD` | No | `Admin@12345` | Password for `scripts/seed_admin.py` |
+| `AUTH_SERVICE_PORT` | No | `8001` | Host port for auth-service in Docker Compose |
+| `POSTGRES_USER` | No | `recentthink` | Local postgres user (Docker) |
+| `POSTGRES_PASSWORD` | No | `recentthink` | Local postgres password (Docker) |
+| `POSTGRES_DB` | No | `recentthink` | Local postgres database name (Docker) |
+| `POSTGRES_PORT` | No | `5432` | Host port for postgres in Docker Compose |
+
+**Never commit `.env`** — it is listed in `.gitignore`.
+
+**Docker note:** when running auth-service inside Docker with the `local-db` profile, set `DATABASE_URL` to use hostname `postgres` instead of `localhost`.
+
+---
+
+## Docker Commands
+
+### Auth service only (external / Supabase database)
+
+```bash
+docker compose up --build auth-service
+```
+
+### Auth service + local PostgreSQL
+
+```bash
+docker compose --profile local-db up --build
+```
+
+### Detached mode
+
+```bash
+docker compose --profile local-db up --build -d
+```
+
+### View logs
+
+```bash
+docker compose logs -f auth-service
+```
+
+### Stop containers
+
+```bash
+docker compose --profile local-db down
+```
+
+### Build image without starting
+
+```bash
+docker build -f services/auth_service/Dockerfile -t recentthink-auth-service .
+```
+
+### Verify health
+
+```bash
+curl http://localhost:8001/health
+# {"service":"auth_service","status":"healthy"}
+
+curl http://localhost:8001/
+# {"message":"Database Connected Successfully"}
+```
+
+Hot reload is enabled in `docker-compose.yml` via volume mounts on `shared/` and `services/auth_service/`.
+
+---
+
+## Alembic Commands
+
+All commands run from the **repository root**.
+
+| Command | Description |
+|---------|-------------|
+| `uv run alembic upgrade head` | Apply all pending migrations |
+| `uv run alembic downgrade -1` | Roll back one revision |
+| `uv run alembic current` | Show current revision |
+| `uv run alembic history` | List all revisions |
+| `uv run alembic revision --autogenerate -m "description"` | Generate a new migration from model changes |
+
+Makefile shortcut:
+
+```bash
+make migrate    # equivalent to: uv run alembic upgrade head
+```
+
+**Adding models from a new service:** import the model classes in `migrations/env.py` so Alembic can detect them during autogenerate.
+
+---
+
+## Run Locally
+
+Start any service from the repository root by changing into its directory:
 
 ```bash
 cd services/auth_service
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-**User Service (port 8002):**
+Or use Makefile shortcuts (Unix / Git Bash):
+
+| Command | Service | Port |
+|---------|---------|------|
+| `make run-gateway` | API Gateway | 8000 |
+| `make run-auth` | Auth Service | 8001 |
+| `make run-user` | User Service | 8002 |
+| `make run-admin` | Admin Service | 8003 |
+| `make run-ai` | AI Service | 8004 |
+| `make run-usage` | Usage Service | 8005 |
+
+### Health endpoints
+
+| Service | Health URL |
+|---------|------------|
+| gateway | `GET http://localhost:8000/` |
+| auth_service | `GET http://localhost:8001/health` |
+| auth_service (DB) | `GET http://localhost:8001/` |
+| user_service | `GET http://localhost:8002/` |
+| admin_service | `GET http://localhost:8003/` |
+| ai_service | `GET http://localhost:8004/` |
+| usage_service | `GET http://localhost:8005/` |
+
+### Quality gates
 
 ```bash
-cd services/user_service
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+make check          # lint + format-check + typecheck + test
+uv run pytest       # run tests only
+uv run ruff check . # lint only
 ```
 
-**Admin Service (port 8003):**
+---
+
+## Deployment Notes
+
+- **auth_service** has a production Dockerfile at `services/auth_service/Dockerfile` (Python 3.13, virtualenv, Uvicorn).
+- Other services will receive Dockerfiles in a later phase.
+- Environment variables must be injected at runtime — never bake secrets into images.
+- Set `ENVIRONMENT=production` and a strong `SECRET_KEY` in production.
+- Run `alembic upgrade head` as a deployment step before starting services.
+- The shared `DATABASE_URL` supports Supabase connection strings; `normalize_database_url()` in `shared/database/session.py` handles `postgresql://` and pgbouncer query params.
+- CI runs on every push/PR to `main`: Ruff, isort, Black, mypy, and pytest with coverage.
+
+---
+
+## Future Roadmap
+
+| Phase | Focus |
+|-------|-------|
+| **Phase 1** (current) | Microservice scaffold, shared config, health checks, DB layer, Docker, CI |
+| **Phase 2** | JWT authentication, login/register endpoints, password verification |
+| **Phase 3** | API Gateway routing, service-to-service communication |
+| **Phase 4** | User profiles, admin dashboards, RBAC |
+| **Phase 5** | AI agents, LLM orchestration, RAG pipelines |
+| **Phase 6** | Usage metering, quotas, billing integration |
+| **Phase 7** | Kubernetes manifests, monitoring, production hardening |
+
+---
+
+## Fresh Clone Checklist
+
+Run these steps after cloning to confirm everything works:
 
 ```bash
-cd services/admin_service
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
-```
+# 1. Install dependencies
+uv sync --all-groups
 
-**AI Service (port 8004):**
+# 2. Configure environment
+cp .env.example .env
 
-```bash
-cd services/ai_service
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
-```
+# 3. Start local database
+docker compose --profile local-db up -d postgres
 
-**Usage Service (port 8005):**
+# 4. Apply migrations
+uv run alembic upgrade head
 
-```bash
-cd services/usage_service
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
-```
+# 5. Seed admin (optional)
+uv run python scripts/seed_admin.py
 
-On macOS/Linux you can also use Makefile shortcuts: `make run-gateway`, `make run-auth`, etc.
-
-Verify health:
-
-```bash
-curl http://localhost:8001/
-# {"service":"auth_service","status":"healthy"}
-```
-
-## Running tests
-
-Run the full suite from the repository root:
-
-```bash
+# 6. Run tests
 uv run pytest
+
+# 7. Start auth service
+cd services/auth_service
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+# 8. Verify (in another terminal)
+curl http://localhost:8001/health
+curl http://localhost:8001/
 ```
 
-Run tests for a single service:
+---
 
-```bash
-uv run pytest services/auth_service/tests/
-```
+## License
 
-Each service includes a smoke test that asserts `GET /` returns HTTP 200.
-
-## Common commands
-
-| Command | Description |
-|---------|-------------|
-| `uv run pytest` | Run all tests |
-| `uv run ruff check .` | Lint |
-| `uv run black .` | Format |
-| `uv run mypy shared services tests` | Type-check |
-| `make check` | All quality gates (Unix) |
-| `docker compose up -d postgres` | Start local PostgreSQL |
-
-## What is implemented in this phase
-
-- Six independent FastAPI applications with health endpoints
-- Clean-architecture folder layout per service
-- Shared configuration via `shared/config.py`
-- Infrastructure directory placeholders
-- Sample pytest per service
-- Updated `.gitignore` (`.env` is never committed)
-
-## Intentionally not implemented yet
-
-- Authentication, JWT, and RBAC
-- Database models, SQLAlchemy, and Alembic migrations
-- Dockerfiles and Kubernetes manifests
-- Business logic, AI logic, and API Gateway routing
-
-These arrive in subsequent phases.
+Proprietary — RecentThink Team.
