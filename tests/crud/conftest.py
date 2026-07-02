@@ -19,6 +19,7 @@ if str(AUTH_SERVICE_ROOT) not in sys.path:
 
 from app.repositories.admin_repository import AdminRepository  # noqa: E402
 from app.repositories.user_repository import UserRepository  # noqa: E402
+
 from shared.database import engine  # noqa: E402
 
 

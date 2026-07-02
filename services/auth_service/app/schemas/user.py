@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import EmailStr, Field
-
 from app.schemas.common import BaseSchema, TimestampSchema
+from pydantic import EmailStr, Field
 
 
 class UserBase(BaseSchema):

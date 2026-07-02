@@ -111,7 +111,9 @@ for service_name, title, health_route in SERVICES:
     health_schema = app_dir / "schemas" / "health.py"
     if health_schema.exists():
         health_schema.unlink()
-    (app_dir / "services" / "health_service.py").write_text(HEALTH_SERVICE, encoding="utf-8")
+    (app_dir / "services" / "health_service.py").write_text(
+        HEALTH_SERVICE, encoding="utf-8"
+    )
     (app_dir / "api" / "health.py").write_text(
         HEALTH_API_TEMPLATE.format(route=health_route),
         encoding="utf-8",
@@ -119,5 +121,7 @@ for service_name, title, health_route in SERVICES:
     if service_name == "auth_service":
         (app_dir / "main.py").write_text(AUTH_MAIN, encoding="utf-8")
     else:
-        (app_dir / "main.py").write_text(MAIN_TEMPLATE.format(title=title), encoding="utf-8")
+        (app_dir / "main.py").write_text(
+            MAIN_TEMPLATE.format(title=title), encoding="utf-8"
+        )
     print(f"Aligned layers for {service_name}")

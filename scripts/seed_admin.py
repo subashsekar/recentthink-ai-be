@@ -12,9 +12,9 @@ AUTH_SERVICE_ROOT = REPO_ROOT / "services" / "auth_service"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(AUTH_SERVICE_ROOT))
 
+from app.models.admin import Admin  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
-from app.models.admin import Admin  # noqa: E402
 from shared.database import SessionLocal  # noqa: E402
 from shared.security import hash_password  # noqa: E402
 

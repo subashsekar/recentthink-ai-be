@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.config import SERVICE_NAME
+
 from shared.schemas.health import HealthResponse, build_health_response
 
 

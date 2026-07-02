@@ -5,9 +5,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-
 from app.repositories.user_repository import UserRepository
+
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError
+
+pytestmark = pytest.mark.db
 
 
 @pytest.fixture

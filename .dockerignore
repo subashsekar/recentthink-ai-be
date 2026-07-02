@@ -11,7 +11,7 @@ htmlcov/
 .coverage
 .coverage.*
 
-# Secrets and local env (loaded at runtime via compose env_file)
+# Secrets and local env (provided at runtime via compose environment)
 .env
 .env.*
 
@@ -31,20 +31,9 @@ docker-data/
 postgres_data/
 volumes/
 
-# Tests (not needed in production image)
+# Tests are not needed in the runtime image
 tests/
 **/tests/
 
-# Other services (auth-service image only needs shared + auth_service)
-services/gateway/
-services/user_service/
-services/admin_service/
-services/ai_service/
-services/usage_service/
-
 # Infrastructure placeholders
 infrastructure/
-
-# Documentation
-*.md
-!README.md

@@ -11,10 +11,10 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.database import Base
-from shared.models import BaseModel
+from shared.models import TimestampedModel
 
 
-class User(BaseModel, Base):
+class User(TimestampedModel, Base):
     """End-user account stored in the ``users`` table."""
 
     __tablename__ = "users"

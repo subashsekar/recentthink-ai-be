@@ -6,11 +6,11 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.models.user import User
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.user import User
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError, RepositoryError
 from shared.logging import get_logger
 
@@ -124,7 +124,9 @@ class UserRepository:
             return user
         except IntegrityError as exc:
             self._db.rollback()
-            logger.error("Database integrity error updating user id=%s: %s", user_id, exc)
+            logger.error(
+                "Database integrity error updating user id=%s: %s", user_id, exc
+            )
             raise DuplicateEmailError("User email already exists.") from exc
         except SQLAlchemyError as exc:
             self._db.rollback()
@@ -150,9 +152,13 @@ class UserRepository:
     def list_users(self, *, skip: int = 0, limit: int = 100) -> list[User]:
         """Return a paginated list of user records."""
         try:
-            stmt = select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
+            stmt = (
+                select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
+            )
             users = list(self._db.scalars(stmt).all())
-            logger.info("Listed users skip=%s limit=%s count=%s", skip, limit, len(users))
+            logger.info(
+                "Listed users skip=%s limit=%s count=%s", skip, limit, len(users)
+            )
             return users
         except SQLAlchemyError as exc:
             logger.error("Database error listing users: %s", exc)

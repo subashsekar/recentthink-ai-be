@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-
 from app.api.health import router as health_router
+from fastapi import FastAPI
 
 APP_VERSION = "0.1.0"
 

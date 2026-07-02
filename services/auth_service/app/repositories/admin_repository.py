@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from app.models.admin import Admin
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.admin import Admin
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError, RepositoryError
 from shared.logging import get_logger
 
@@ -115,8 +115,12 @@ class AdminRepository:
             return admin
         except IntegrityError as exc:
             self._db.rollback()
-            logger.error("Database integrity error updating admin id=%s: %s", admin_id, exc)
-            raise DuplicateEmailError("Admin email or phone number already exists.") from exc
+            logger.error(
+                "Database integrity error updating admin id=%s: %s", admin_id, exc
+            )
+            raise DuplicateEmailError(
+                "Admin email or phone number already exists."
+            ) from exc
         except SQLAlchemyError as exc:
             self._db.rollback()
             logger.error("Database error updating admin id=%s: %s", admin_id, exc)
@@ -141,9 +145,16 @@ class AdminRepository:
     def list_admins(self, *, skip: int = 0, limit: int = 100) -> list[Admin]:
         """Return a paginated list of admin records."""
         try:
-            stmt = select(Admin).order_by(Admin.created_at.desc()).offset(skip).limit(limit)
+            stmt = (
+                select(Admin)
+                .order_by(Admin.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
             admins = list(self._db.scalars(stmt).all())
-            logger.info("Listed admins skip=%s limit=%s count=%s", skip, limit, len(admins))
+            logger.info(
+                "Listed admins skip=%s limit=%s count=%s", skip, limit, len(admins)
+            )
             return admins
         except SQLAlchemyError as exc:
             logger.error("Database error listing admins: %s", exc)

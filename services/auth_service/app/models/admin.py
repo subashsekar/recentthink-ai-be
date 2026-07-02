@@ -10,10 +10,10 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.database import Base
-from shared.models import BaseModel
+from shared.models import TimestampedModel
 
 
-class Admin(BaseModel, Base):
+class Admin(TimestampedModel, Base):
     """Administrator account stored in the ``admins`` table."""
 
     __tablename__ = "admins"

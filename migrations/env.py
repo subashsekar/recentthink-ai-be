@@ -15,10 +15,11 @@ AUTH_SERVICE_ROOT = REPO_ROOT / "services" / "auth_service"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(AUTH_SERVICE_ROOT))
 
-from shared.config import get_settings  # noqa: E402
-from shared.database import Base, normalize_database_url  # noqa: E402
 from app.models.admin import Admin  # noqa: E402, F401
 from app.models.user import User  # noqa: E402, F401
+
+from shared.config import get_settings  # noqa: E402
+from shared.database import Base, normalize_database_url  # noqa: E402
 
 config = context.config
 

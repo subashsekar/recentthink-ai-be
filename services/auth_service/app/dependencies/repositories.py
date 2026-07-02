@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import Depends
-from sqlalchemy.orm import Session
-
 from app.database import get_db
 from app.repositories.admin_repository import AdminRepository
 from app.repositories.user_repository import UserRepository
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
 
 def get_admin_repository(db: Session = Depends(get_db)) -> AdminRepository:

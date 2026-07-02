@@ -11,6 +11,26 @@ jobs:
     name: Lint, type-check & test
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: recentthink
+          POSTGRES_PASSWORD: recentthink
+          POSTGRES_DB: recentthink
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recentthink -d recentthink"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ENVIRONMENT: test
+      SECRET_KEY: ci-secret-key-not-for-production
+      DATABASE_URL: postgresql+psycopg://recentthink:recentthink@localhost:5432/recentthink
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,8 +55,18 @@ jobs:
       - name: Black (check)
         run: uv run black --check .
 
-      - name: mypy (type-check)
-        run: uv run mypy shared services tests
+      - name: mypy (shared + tests)
+        run: uv run mypy shared tests
+
+      - name: mypy (each service)
+        run: |
+          for svc in gateway auth_service user_service admin_service ai_service usage_service; do
+            echo "==> mypy services/$svc/app"
+            ( cd "services/$svc" && MYPYPATH=. uv run mypy --explicit-package-bases app ) || exit 1
+          done
+
+      - name: Alembic (apply migrations)
+        run: uv run alembic upgrade head
 
       - name: Pytest (with coverage)
         run: uv run pytest
