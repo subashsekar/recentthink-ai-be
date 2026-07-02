@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from app.models.enums import Role
 from app.repositories.user_repository import UserRepository
 
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError
@@ -17,7 +18,8 @@ def user_payload() -> dict[str, str]:
     """Return unique user field values for a single test run."""
     suffix = uuid.uuid4().hex[:8]
     return {
-        "full_name": "Test User",
+        "first_name": "Test",
+        "last_name": "User",
         "email": f"user-crud-{suffix}@recentthink.test",
         "password_hash": "hashed-password-placeholder",
     }
@@ -32,7 +34,9 @@ def test_user_create_read(
 
     assert created.id is not None
     assert created.email == user_payload["email"]
-    assert created.full_name == user_payload["full_name"]
+    assert created.first_name == user_payload["first_name"]
+    assert created.last_name == user_payload["last_name"]
+    assert created.role is Role.USER
     assert created.is_verified is False
     assert created.is_active is True
     assert created.created_at is not None
@@ -47,6 +51,15 @@ def test_user_create_read(
     assert by_email.id == created.id
 
 
+def test_user_role_default(
+    user_repository: UserRepository,
+    user_payload: dict[str, str],
+) -> None:
+    """Role defaults to USER when not explicitly provided."""
+    created = user_repository.create_user(**user_payload)
+    assert created.role is Role.USER
+
+
 def test_user_update(
     user_repository: UserRepository,
     user_payload: dict[str, str],
@@ -56,16 +69,18 @@ def test_user_update(
 
     updated = user_repository.update_user(
         created.id,
-        full_name="Updated User",
+        first_name="Updated",
         is_verified=True,
+        role=Role.ADMIN,
     )
 
-    assert updated.full_name == "Updated User"
+    assert updated.first_name == "Updated"
     assert updated.is_verified is True
+    assert updated.role is Role.ADMIN
 
     fetched = user_repository.get_user_by_id(created.id)
     assert fetched is not None
-    assert fetched.full_name == "Updated User"
+    assert fetched.first_name == "Updated"
 
 
 def test_user_delete(
@@ -110,7 +125,7 @@ def test_user_update_missing_record_raises(
 ) -> None:
     """Error handling: update on missing record raises RecordNotFoundError."""
     with pytest.raises(RecordNotFoundError):
-        user_repository.update_user(uuid.uuid4(), full_name="Missing")
+        user_repository.update_user(uuid.uuid4(), first_name="Missing")
 
 
 def test_user_delete_missing_record_raises(

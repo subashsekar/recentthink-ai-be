@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.models.enums import Role
 from app.models.user import User
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -26,16 +26,13 @@ class UserRepository:
     def create_user(
         self,
         *,
-        full_name: str,
+        first_name: str,
+        last_name: str,
         email: str,
         password_hash: str,
-        phone_number: str | None = None,
+        role: Role = Role.USER,
         is_verified: bool = False,
         is_active: bool = True,
-        is_blocked: bool = False,
-        total_tokens_used: int = 0,
-        total_requests: int = 0,
-        last_login: datetime | None = None,
     ) -> User:
         """Persist a new user record."""
         if self.get_user_by_email(email) is not None:
@@ -43,16 +40,13 @@ class UserRepository:
             raise DuplicateEmailError(f"User with email '{email}' already exists.")
 
         user = User(
-            full_name=full_name,
+            first_name=first_name,
+            last_name=last_name,
             email=email,
             password_hash=password_hash,
-            phone_number=phone_number,
+            role=role,
             is_verified=is_verified,
             is_active=is_active,
-            is_blocked=is_blocked,
-            total_tokens_used=total_tokens_used,
-            total_requests=total_requests,
-            last_login=last_login,
         )
 
         try:
@@ -75,12 +69,7 @@ class UserRepository:
     def get_user_by_id(self, user_id: UUID) -> User | None:
         """Return a user by primary key."""
         try:
-            user = self._db.scalar(select(User).where(User.id == user_id))
-            if user is not None:
-                logger.info("Fetched user id=%s", user_id)
-            else:
-                logger.info("User not found id=%s", user_id)
-            return user
+            return self._db.scalar(select(User).where(User.id == user_id))
         except SQLAlchemyError as exc:
             logger.error("Database error fetching user id=%s: %s", user_id, exc)
             raise RepositoryError("Failed to fetch user.") from exc
@@ -88,12 +77,7 @@ class UserRepository:
     def get_user_by_email(self, email: str) -> User | None:
         """Return a user by email address."""
         try:
-            user = self._db.scalar(select(User).where(User.email == email))
-            if user is not None:
-                logger.info("Fetched user email=%s", email)
-            else:
-                logger.info("User not found email=%s", email)
-            return user
+            return self._db.scalar(select(User).where(User.email == email))
         except SQLAlchemyError as exc:
             logger.error("Database error fetching user email=%s: %s", email, exc)
             raise RepositoryError("Failed to fetch user.") from exc
@@ -155,11 +139,7 @@ class UserRepository:
             stmt = (
                 select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
             )
-            users = list(self._db.scalars(stmt).all())
-            logger.info(
-                "Listed users skip=%s limit=%s count=%s", skip, limit, len(users)
-            )
-            return users
+            return list(self._db.scalars(stmt).all())
         except SQLAlchemyError as exc:
             logger.error("Database error listing users: %s", exc)
             raise RepositoryError("Failed to list users.") from exc

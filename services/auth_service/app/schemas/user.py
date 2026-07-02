@@ -1,47 +1,39 @@
-"""User request and response schemas."""
+"""User database-layer Pydantic schemas."""
 
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
+from app.models.enums import Role
 from app.schemas.common import BaseSchema, TimestampSchema
 from pydantic import EmailStr, Field
 
 
-class UserBase(BaseSchema):
-    """Fields shared across user schemas."""
+class UserCreate(BaseSchema):
+    """Fields required to persist a new user record."""
 
-    full_name: str = Field(..., min_length=1, max_length=255)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
     email: EmailStr
-    phone_number: str | None = Field(default=None, max_length=20)
+    password_hash: str = Field(..., min_length=1, max_length=255)
+    role: Role = Role.USER
     is_verified: bool = False
     is_active: bool = True
-    is_blocked: bool = False
 
 
-class UserCreate(UserBase):
-    """Payload for creating a user."""
+class UserRead(UserCreate, TimestampSchema):
+    """User record returned from the database layer."""
 
-    password: str = Field(..., min_length=8, max_length=128)
+    id: UUID
 
 
 class UserUpdate(BaseSchema):
-    """Payload for partially updating a user."""
+    """Fields for partially updating a user record."""
 
-    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    last_name: str | None = Field(default=None, min_length=1, max_length=100)
     email: EmailStr | None = None
-    phone_number: str | None = Field(default=None, max_length=20)
+    password_hash: str | None = Field(default=None, min_length=1, max_length=255)
+    role: Role | None = None
     is_verified: bool | None = None
     is_active: bool | None = None
-    is_blocked: bool | None = None
-    password: str | None = Field(default=None, min_length=8, max_length=128)
-
-
-class UserResponse(UserBase, TimestampSchema):
-    """User returned by the API."""
-
-    id: UUID
-    total_tokens_used: int
-    total_requests: int
-    last_login: datetime | None = None

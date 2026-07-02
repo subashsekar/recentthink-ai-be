@@ -16,6 +16,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(AUTH_SERVICE_ROOT))
 
 from app.models.admin import Admin  # noqa: E402, F401
+from app.models.email_verification_token import EmailVerificationToken  # noqa: E402, F401
+from app.models.password_reset_token import PasswordResetToken  # noqa: E402, F401
+from app.models.refresh_token import RefreshToken  # noqa: E402, F401
 from app.models.user import User  # noqa: E402, F401
 
 from shared.config import get_settings  # noqa: E402
