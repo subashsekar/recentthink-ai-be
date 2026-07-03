@@ -25,6 +25,7 @@ def create_access_token(
     user_id: UUID,
     email: str,
     role: str,
+    pwd_ts: float = 0.0,
     settings: Settings | None = None,
 ) -> str:
     """Encode and return a signed access token for the given user claims.
@@ -32,6 +33,10 @@ def create_access_token(
     Includes standard registered claims (``iss``, ``aud``, ``iat``, ``exp``,
     ``jti``) alongside the application claims so tokens can be scoped to this
     issuer/audience and individually identified via their ``jti``.
+
+    ``pwd_ts`` is the epoch-seconds timestamp of the user's last password
+    change. It lets the server reject access tokens issued before a subsequent
+    password reset/change, invalidating stale sessions.
     """
     cfg = settings or get_settings()
     now = datetime.now(tz=UTC)
@@ -40,6 +45,7 @@ def create_access_token(
         "user_id": str(user_id),
         "email": email,
         "role": role,
+        "pwd_ts": pwd_ts,
         "token_type": TokenType.ACCESS.value,
         "iss": cfg.jwt_issuer,
         "aud": cfg.jwt_audience,

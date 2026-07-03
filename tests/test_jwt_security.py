@@ -39,6 +39,22 @@ def test_create_access_token_payload(jwt_settings: Settings) -> None:
     assert payload["iss"] == jwt_settings.jwt_issuer
     assert payload["aud"] == jwt_settings.jwt_audience
     assert "jti" in payload
+    assert payload["pwd_ts"] == 0.0
+
+
+def test_create_access_token_with_password_timestamp(jwt_settings: Settings) -> None:
+    user_id = uuid4()
+    changed_at = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
+    token = create_access_token(
+        user_id=user_id,
+        email="user@example.com",
+        role="USER",
+        pwd_ts=changed_at.timestamp(),
+        settings=jwt_settings,
+    )
+
+    payload = verify_token(token, settings=jwt_settings)
+    assert payload["pwd_ts"] == changed_at.timestamp()
 
 
 def test_decode_expired_token_raises(jwt_settings: Settings) -> None:

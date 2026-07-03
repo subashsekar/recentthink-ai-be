@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.models.enums import Role
 from app.models.user import User
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ class UserRepository:
             "last_name",
             "email",
             "password_hash",
+            "password_changed_at",
             "role",
             "is_verified",
             "is_active",
@@ -96,12 +97,28 @@ class UserRepository:
             logger.error("Database error fetching user email=%s: %s", email, exc)
             raise RepositoryError("Failed to fetch user.") from exc
 
-    def update_user(self, user_id: UUID, **fields: Any) -> User:
+    def exists_user_with_role(self, role: Role) -> bool:
+        """Return ``True`` when at least one user has the given role."""
+        try:
+            count = self._db.scalar(
+                text("SELECT COUNT(*) FROM users WHERE role = :role"),
+                {"role": role.value},
+            )
+            return bool(count)
+        except SQLAlchemyError as exc:
+            logger.error("Database error checking role=%s existence: %s", role, exc)
+            raise RepositoryError("Failed to check user role.") from exc
+
+    def update_user(self, user_id: UUID, *, commit: bool = True, **fields: Any) -> User:
         """Persist changes to an existing user record.
 
         Only whitelisted columns (:attr:`EDITABLE_FIELDS`) may be updated;
         passing any other key raises :class:`ValueError` so that non-editable
         or unknown attributes cannot be silently written.
+
+        When ``commit`` is ``False`` the changes are flushed but not committed,
+        allowing the caller to coordinate a single, atomic transaction across
+        multiple repositories that share the session.
         """
         unknown = set(fields) - self.EDITABLE_FIELDS
         if unknown:
@@ -126,18 +143,22 @@ class UserRepository:
             setattr(user, key, value)
 
         try:
-            self._db.commit()
-            self._db.refresh(user)
+            self._db.flush()
+            if commit:
+                self._db.commit()
+                self._db.refresh(user)
             logger.info("Updated user id=%s", user_id)
             return user
         except IntegrityError as exc:
-            self._db.rollback()
+            if commit:
+                self._db.rollback()
             logger.error(
                 "Database integrity error updating user id=%s: %s", user_id, exc
             )
             raise DuplicateEmailError("User email already exists.") from exc
         except SQLAlchemyError as exc:
-            self._db.rollback()
+            if commit:
+                self._db.rollback()
             logger.error("Database error updating user id=%s: %s", user_id, exc)
             raise RepositoryError("Failed to update user.") from exc
 

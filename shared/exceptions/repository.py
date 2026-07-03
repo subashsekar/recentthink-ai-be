@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from shared.exceptions.base import DatabaseException
 
-class RepositoryError(Exception):
+
+class RepositoryError(DatabaseException):
     """Base exception for repository operations."""
 
 

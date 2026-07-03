@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from shared.exceptions.base import BusinessException
 
-class AuthError(Exception):
+
+class AuthError(BusinessException):
     """Base class for authentication-related errors."""
 
 
-class InvalidCredentialsError(AuthError):
+class AuthenticationException(AuthError):
+    """Base class for authentication failures (HTTP 401).
+
+    Raised when the caller cannot be identified or credentials are invalid.
+    """
+
+
+class InvalidCredentialsError(AuthenticationException):
     """Raised when email/password combination is invalid."""
 
 
@@ -19,25 +28,45 @@ class InactiveUserError(AuthError):
     """Raised when an inactive user attempts to authenticate."""
 
 
-class InvalidTokenError(AuthError):
+class InvalidTokenError(AuthenticationException):
     """Raised when a token is malformed or cannot be verified."""
 
 
-class ExpiredTokenError(AuthError):
+class ExpiredTokenError(AuthenticationException):
     """Raised when a token has passed its expiration time."""
 
 
-class RevokedTokenError(AuthError):
+class UsedTokenError(AuthError):
+    """Raised when a one-time token has already been consumed."""
+
+
+class RevokedTokenError(AuthenticationException):
     """Raised when a refresh token has been revoked."""
 
 
-class AuthorizationError(AuthError):
-    """Base class for authorization (permission) failures.
+class EmailNotVerifiedError(AuthError):
+    """Raised when an unverified user attempts to authenticate."""
+
+
+class EmailAlreadyVerifiedError(AuthError):
+    """Raised when re-verifying an account whose email is already verified."""
+
+
+class AuthorizationException(AuthError):
+    """Base class for authorization (permission) failures (HTTP 403).
 
     Distinct from authentication errors: the caller *is* authenticated but is
     not permitted to perform the requested action.
     """
 
 
-class ForbiddenError(AuthorizationError):
+# Backward-compatible alias used throughout the existing codebase.
+AuthorizationError = AuthorizationException
+
+
+class ForbiddenError(AuthorizationException):
     """Raised when an authenticated user lacks permission for a resource."""
+
+
+class PasswordReuseError(AuthError):
+    """Raised when a new password matches the current password."""

@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.models.email_verification_token import EmailVerificationToken
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -84,6 +84,42 @@ class EmailVerificationRepository:
         except SQLAlchemyError as exc:
             logger.error("Database error fetching email verification token: %s", exc)
             raise RepositoryError("Failed to fetch email verification token.") from exc
+
+    def invalidate_unused_tokens(self, user_id: UUID) -> int:
+        """Mark every unused verification token for a user as used.
+
+        Used before issuing a fresh token (e.g. on resend) so that at most one
+        verification token is ever redeemable for a user. Returns the number of
+        tokens invalidated.
+        """
+        try:
+            result = self._db.execute(
+                update(EmailVerificationToken)
+                .where(
+                    EmailVerificationToken.user_id == user_id,
+                    EmailVerificationToken.is_used.is_(False),
+                )
+                .values(is_used=True),
+            )
+            self._db.commit()
+            invalidated = result.rowcount or 0
+            logger.info(
+                "Invalidated %d email verification token(s) user_id=%s",
+                invalidated,
+                user_id,
+            )
+            return invalidated
+        except SQLAlchemyError as exc:
+            self._db.rollback()
+            logger.error(
+                "Database error invalidating email verification tokens "
+                "user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            raise RepositoryError(
+                "Failed to invalidate email verification tokens.",
+            ) from exc
 
     def mark_as_used(self, token_id: UUID) -> EmailVerificationToken:
         """Mark an email verification token as used."""

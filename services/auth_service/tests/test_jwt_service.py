@@ -47,6 +47,21 @@ def test_create_and_verify_access_token(jwt_service: JWTService) -> None:
     assert "jti" in payload
     assert payload["iss"] == "recentthink-auth"
     assert payload["aud"] == "recentthink-clients"
+    assert payload["pwd_ts"] == 0.0
+
+
+def test_create_access_token_embeds_password_changed_at(jwt_service: JWTService) -> None:
+    user_id = uuid4()
+    changed_at = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+    token = jwt_service.create_access_token(
+        user_id=user_id,
+        email="user@example.com",
+        role=Role.USER,
+        password_changed_at=changed_at,
+    )
+
+    payload = jwt_service.verify_token(token)
+    assert payload["pwd_ts"] == changed_at.timestamp()
 
 
 def test_each_token_has_unique_jti(jwt_service: JWTService) -> None:

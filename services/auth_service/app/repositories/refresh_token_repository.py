@@ -177,10 +177,12 @@ class RefreshTokenRepository:
             )
             raise RepositoryError("Failed to list active refresh tokens.") from exc
 
-    def revoke_all_tokens(self, user_id: UUID) -> int:
+    def revoke_all_tokens(self, user_id: UUID, *, commit: bool = True) -> int:
         """Revoke every active refresh token for a user.
 
-        Returns the number of tokens revoked.
+        Returns the number of tokens revoked. When ``commit`` is ``False`` the
+        change is left pending so the caller can commit it atomically alongside
+        other operations on the same session.
         """
         try:
             stmt = (
@@ -192,14 +194,58 @@ class RefreshTokenRepository:
                 .values(is_revoked=True)
             )
             result = self._db.execute(stmt)
-            self._db.commit()
+            if commit:
+                self._db.commit()
             revoked = result.rowcount or 0
             logger.info("Revoked %s refresh token(s) for user_id=%s", revoked, user_id)
             return revoked
         except SQLAlchemyError as exc:
-            self._db.rollback()
+            if commit:
+                self._db.rollback()
             logger.error(
                 "Database error revoking all refresh tokens user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            raise RepositoryError("Failed to revoke refresh tokens.") from exc
+
+    def revoke_all_tokens_except(
+        self,
+        user_id: UUID,
+        *,
+        keep_token_hash: str,
+        commit: bool = True,
+    ) -> int:
+        """Revoke every active refresh token for a user except one hash.
+
+        Returns the number of tokens revoked. When ``commit`` is ``False`` the
+        change is left pending for the caller to commit atomically.
+        """
+        try:
+            stmt = (
+                update(RefreshToken)
+                .where(
+                    RefreshToken.user_id == user_id,
+                    RefreshToken.is_revoked.is_(False),
+                    RefreshToken.token != keep_token_hash,
+                )
+                .values(is_revoked=True)
+            )
+            result = self._db.execute(stmt)
+            if commit:
+                self._db.commit()
+            revoked = result.rowcount or 0
+            logger.info(
+                "Revoked %s refresh token(s) for user_id=%s (kept current session)",
+                revoked,
+                user_id,
+            )
+            return revoked
+        except SQLAlchemyError as exc:
+            if commit:
+                self._db.rollback()
+            logger.error(
+                "Database error revoking refresh tokens user_id=%s: %s",
                 user_id,
                 exc,
             )

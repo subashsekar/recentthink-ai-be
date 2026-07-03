@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, String
+from sqlalchemy import Boolean, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,6 +57,16 @@ class User(TimestampedModel, Base):
         Boolean,
         default=True,
         server_default="true",
+        nullable=False,
+    )
+    # Timestamp of the last password change. Embedded (as epoch seconds) in the
+    # ``pwd_ts`` claim of every access token; tokens minted before this instant
+    # are rejected so that a password reset/change invalidates existing access
+    # tokens, not only refresh tokens.
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=UTC),
+        server_default=func.now(),
         nullable=False,
     )
 

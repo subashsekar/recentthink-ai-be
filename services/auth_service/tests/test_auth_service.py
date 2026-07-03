@@ -17,13 +17,16 @@ from app.services.password_service import PasswordService
 from shared.config import Settings
 from shared.exceptions import DuplicateEmailError
 from shared.exceptions.auth import (
+    EmailNotVerifiedError,
     ExpiredTokenError,
+    ForbiddenError,
     InactiveUserError,
     InvalidCredentialsError,
     InvalidTokenError,
     RevokedTokenError,
     UserNotFoundError,
 )
+from shared.exceptions.email import EmailDeliveryError
 
 
 @pytest.fixture
@@ -57,26 +60,36 @@ def refresh_token_repository() -> MagicMock:
 
 
 @pytest.fixture
+def email_verification_service() -> MagicMock:
+    from app.services.email_verification_service import EmailVerificationService
+
+    return MagicMock(spec=EmailVerificationService)
+
+
+@pytest.fixture
 def auth_service(
     user_repository: MagicMock,
     refresh_token_repository: MagicMock,
     password_service: PasswordService,
     jwt_service: JWTService,
+    email_verification_service: MagicMock,
 ) -> AuthService:
     return AuthService(
         user_repository=user_repository,
         refresh_token_repository=refresh_token_repository,
         password_service=password_service,
         jwt_service=jwt_service,
+        email_verification_service=email_verification_service,
     )
 
 
 def _make_user(
     *,
     email: str = "user@example.com",
-    password: str = "SecurePass1",
+    password: str = "SecurePass1!",
     password_service: PasswordService,
     is_active: bool = True,
+    is_verified: bool = True,
 ) -> MagicMock:
     user = MagicMock()
     user.id = uuid4()
@@ -85,10 +98,11 @@ def _make_user(
     user.email = email
     user.password_hash = password_service.hash(password)
     user.role = Role.USER
-    user.is_verified = False
+    user.is_verified = is_verified
     user.is_active = is_active
     user.created_at = datetime.now(tz=UTC)
     user.updated_at = datetime.now(tz=UTC)
+    user.password_changed_at = datetime.now(tz=UTC)
     return user
 
 
@@ -121,14 +135,61 @@ def test_register_creates_user(
             first_name="Jane",
             last_name="Doe",
             email="user@example.com",
-            password="SecurePass1",
+            password="SecurePass1!",
         ),
     )
 
     assert response.user.email == "user@example.com"
     user_repository.create_user.assert_called_once()
     assert "password_hash" in user_repository.create_user.call_args.kwargs
-    assert user_repository.create_user.call_args.kwargs["password_hash"] != "SecurePass1"
+    assert user_repository.create_user.call_args.kwargs["password_hash"] != "SecurePass1!"
+
+
+def test_register_sends_verification_email(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    email_verification_service: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service)
+    user_repository.create_user.return_value = user
+
+    auth_service.register(
+        RegisterRequest(
+            first_name="Jane",
+            last_name="Doe",
+            email="user@example.com",
+            password="SecurePass1!",
+        ),
+    )
+
+    email_verification_service.send_verification_email.assert_called_once_with(user)
+
+
+def test_register_succeeds_when_email_delivery_fails(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    email_verification_service: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service)
+    user_repository.create_user.return_value = user
+    email_verification_service.send_verification_email.side_effect = (
+        EmailDeliveryError("smtp down")
+    )
+
+    # Registration must not fail just because the verification email could not
+    # be delivered; the user can request a resend.
+    response = auth_service.register(
+        RegisterRequest(
+            first_name="Jane",
+            last_name="Doe",
+            email="user@example.com",
+            password="SecurePass1!",
+        ),
+    )
+
+    assert response.user.email == "user@example.com"
 
 
 def test_register_duplicate_email_raises(
@@ -143,7 +204,7 @@ def test_register_duplicate_email_raises(
                 first_name="Jane",
                 last_name="Doe",
                 email="user@example.com",
-                password="SecurePass1",
+                password="SecurePass1!",
             ),
         )
 
@@ -159,7 +220,7 @@ def test_login_success(
     refresh_token_repository.create_refresh_token.return_value = MagicMock()
 
     response = auth_service.login(
-        LoginRequest(email="user@example.com", password="SecurePass1"),
+        LoginRequest(email="user@example.com", password="SecurePass1!"),
     )
 
     assert response.access_token
@@ -174,6 +235,41 @@ def test_login_success(
     assert len(stored_hash) == 64
 
 
+def test_login_blocked_when_email_unverified(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    refresh_token_repository: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service, is_verified=False)
+    user_repository.get_user_by_email.return_value = user
+
+    with pytest.raises(EmailNotVerifiedError):
+        auth_service.login(
+            LoginRequest(email="user@example.com", password="SecurePass1!"),
+        )
+
+    # No session should be issued for an unverified account.
+    refresh_token_repository.create_refresh_token.assert_not_called()
+
+
+def test_login_succeeds_after_verification(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    refresh_token_repository: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service, is_verified=True)
+    user_repository.get_user_by_email.return_value = user
+
+    response = auth_service.login(
+        LoginRequest(email="user@example.com", password="SecurePass1!"),
+    )
+
+    assert response.access_token
+    assert response.refresh_token
+
+
 def test_login_invalid_credentials(
     auth_service: AuthService,
     user_repository: MagicMock,
@@ -182,7 +278,7 @@ def test_login_invalid_credentials(
 
     with pytest.raises(InvalidCredentialsError):
         auth_service.login(
-            LoginRequest(email="user@example.com", password="SecurePass1"),
+            LoginRequest(email="user@example.com", password="SecurePass1!"),
         )
 
 
@@ -196,7 +292,22 @@ def test_login_inactive_user(
 
     with pytest.raises(InactiveUserError):
         auth_service.login(
-            LoginRequest(email="user@example.com", password="SecurePass1"),
+            LoginRequest(email="user@example.com", password="SecurePass1!"),
+        )
+
+
+def test_login_rejects_insufficient_role(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service)
+    user_repository.get_user_by_email.return_value = user
+
+    with pytest.raises(ForbiddenError):
+        auth_service.login(
+            LoginRequest(email="user@example.com", password="SecurePass1!"),
+            required_roles=frozenset({Role.ADMIN, Role.SUPER_ADMIN}),
         )
 
 
@@ -353,6 +464,28 @@ def test_refresh_inactive_user_raises(
         auth_service.refresh(RefreshTokenRequest(refresh_token="inactive-token"))
 
 
+def test_refresh_rejects_insufficient_role(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    refresh_token_repository: MagicMock,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service)
+    stored = _make_refresh_token(
+        token="user-token",
+        user_id=user.id,
+        expires_at=datetime.now(tz=UTC) + timedelta(days=1),
+    )
+    refresh_token_repository.get_by_token_hash.return_value = stored
+    user_repository.get_user_by_id.return_value = user
+
+    with pytest.raises(ForbiddenError):
+        auth_service.refresh(
+            RefreshTokenRequest(refresh_token="user-token"),
+            required_roles=frozenset({Role.ADMIN, Role.SUPER_ADMIN}),
+        )
+
+
 def test_logout_revokes_token(
     auth_service: AuthService,
     refresh_token_repository: MagicMock,
@@ -394,3 +527,25 @@ def test_logout_invalid_token_raises(
 
     with pytest.raises(InvalidTokenError):
         auth_service.logout(LogoutRequest(refresh_token="missing"))
+
+
+def test_stale_access_token_rejected_after_password_change(
+    auth_service: AuthService,
+    user_repository: MagicMock,
+    jwt_service: JWTService,
+    password_service: PasswordService,
+) -> None:
+    user = _make_user(password_service=password_service)
+    issued_at = datetime.now(tz=UTC) - timedelta(hours=1)
+    user.password_changed_at = datetime.now(tz=UTC)
+    user_repository.get_user_by_id.return_value = user
+
+    stale_token = jwt_service.create_access_token(
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+        password_changed_at=issued_at,
+    )
+
+    with pytest.raises(InvalidTokenError, match="password change"):
+        auth_service.resolve_user_from_access_token(stale_token)

@@ -26,14 +26,29 @@ class JWTService:
         user_id: UUID,
         email: str,
         role: Role,
+        password_changed_at: datetime | None = None,
     ) -> str:
-        """Create a signed JWT access token for the given user."""
+        """Create a signed JWT access token for the given user.
+
+        ``password_changed_at`` is embedded as the ``pwd_ts`` epoch-seconds
+        claim so tokens can be invalidated by a later password change.
+        """
         return create_access_token(
             user_id=user_id,
             email=email,
             role=role.value,
+            pwd_ts=self._password_timestamp(password_changed_at),
             settings=self._settings,
         )
+
+    @staticmethod
+    def _password_timestamp(value: datetime | None) -> float:
+        """Return ``value`` as epoch seconds, or ``0`` when unset."""
+        if value is None:
+            return 0.0
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.timestamp()
 
     def generate_refresh_token(self) -> str:
         """Return a cryptographically secure opaque refresh token string.

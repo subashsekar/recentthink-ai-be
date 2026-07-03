@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import re
-
 from app.schemas.common import BaseSchema
+from app.schemas.password_policy import (
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    validate_password_strength,
+)
 from app.schemas.responses import CurrentUserResponse, UserResponse
 from pydantic import EmailStr, Field, field_validator
-
-
-_PASSWORD_MIN_LENGTH = 8
-_PASSWORD_PATTERN = re.compile(
-    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$",
-)
 
 
 class ErrorResponse(BaseSchema):
@@ -27,22 +24,13 @@ class RegisterRequest(BaseSchema):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     email: EmailStr
-    password: str = Field(..., min_length=_PASSWORD_MIN_LENGTH, max_length=128)
+    password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("password")
     @classmethod
-    def validate_password_strength(cls, value: str) -> str:
+    def validate_password(cls, value: str) -> str:
         """Enforce minimum password complexity."""
-        if len(value) < _PASSWORD_MIN_LENGTH:
-            msg = f"Password must be at least {_PASSWORD_MIN_LENGTH} characters."
-            raise ValueError(msg)
-        if not _PASSWORD_PATTERN.match(value):
-            msg = (
-                "Password must contain at least one uppercase letter, "
-                "one lowercase letter, and one digit."
-            )
-            raise ValueError(msg)
-        return value
+        return validate_password_strength(value)
 
 
 class RegisterResponse(BaseSchema):

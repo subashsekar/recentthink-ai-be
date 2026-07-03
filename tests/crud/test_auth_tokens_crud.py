@@ -113,6 +113,39 @@ def test_email_verification_token_create(
     assert fetched.id == created.id
 
 
+def test_email_verification_invalidate_unused_tokens(
+    email_verification_repository: EmailVerificationRepository,
+    created_user,
+) -> None:
+    """Invalidating unused tokens marks them used without touching used ones."""
+    now = datetime.now(tz=UTC)
+
+    unused_a = email_verification_repository.create_token(
+        user_id=created_user.id,
+        token=f"verify-a-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(hours=24),
+    )
+    unused_b = email_verification_repository.create_token(
+        user_id=created_user.id,
+        token=f"verify-b-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(hours=24),
+    )
+    already_used = email_verification_repository.create_token(
+        user_id=created_user.id,
+        token=f"verify-c-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(hours=24),
+    )
+    email_verification_repository.mark_as_used(already_used.id)
+
+    invalidated = email_verification_repository.invalidate_unused_tokens(
+        created_user.id,
+    )
+
+    assert invalidated == 2
+    assert email_verification_repository.get_by_id(unused_a.id).is_used is True
+    assert email_verification_repository.get_by_id(unused_b.id).is_used is True
+
+
 def test_password_reset_token_create(
     password_reset_repository: PasswordResetRepository,
     created_user,

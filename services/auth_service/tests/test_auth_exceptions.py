@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -107,11 +107,6 @@ def test_resolve_user_from_access_token(client: TestClient) -> None:
     settings = get_settings()
     jwt_service = JWTService(settings=settings)
     user_id = uuid4()
-    token = jwt_service.create_access_token(
-        user_id=user_id,
-        email="resolve@example.com",
-        role=Role.USER,
-    )
 
     user = MagicMock()
     user.id = user_id
@@ -123,6 +118,13 @@ def test_resolve_user_from_access_token(client: TestClient) -> None:
     user.is_active = True
     user.created_at = datetime.now(tz=UTC)
     user.updated_at = datetime.now(tz=UTC)
+    user.password_changed_at = datetime.now(tz=UTC)
+    token = jwt_service.create_access_token(
+        user_id=user_id,
+        email="resolve@example.com",
+        role=Role.USER,
+        password_changed_at=user.password_changed_at,
+    )
 
     from app.dependencies.auth import get_current_active_user, get_user_repository
     from app.main import app
@@ -142,6 +144,46 @@ def test_resolve_user_from_access_token(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["email"] == "resolve@example.com"
+
+
+def test_stale_access_token_after_password_change_returns_401(
+    client: TestClient,
+) -> None:
+    """Access tokens minted before a password change are rejected."""
+    from shared.config import get_settings
+
+    settings = get_settings()
+    jwt_service = JWTService(settings=settings)
+    user_id = uuid4()
+    issued_at = datetime.now(tz=UTC) - timedelta(hours=1)
+
+    token = jwt_service.create_access_token(
+        user_id=user_id,
+        email="stale@example.com",
+        role=Role.USER,
+        password_changed_at=issued_at,
+    )
+
+    user = MagicMock()
+    user.id = user_id
+    user.password_changed_at = datetime.now(tz=UTC)
+
+    from app.dependencies.auth import get_user_repository
+    from app.main import app
+
+    mock_repo = MagicMock()
+    mock_repo.get_user_by_id.return_value = user
+    app.dependency_overrides[get_user_repository] = lambda: mock_repo
+    try:
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+    assert "password change" in response.json()["detail"].lower()
 
 
 def test_resolve_user_not_found_returns_404(client: TestClient) -> None:
@@ -194,3 +236,41 @@ def test_refresh_user_not_found_returns_404(client_with_auth_errors: tuple) -> N
 
     response = client.post("/auth/refresh", json={"refresh_token": "token"})
     assert response.status_code == 404
+
+
+def test_database_exception_maps_to_500(client: TestClient) -> None:
+    from app.dependencies.auth import get_auth_service
+    from app.main import app
+    from app.services.auth_service import AuthService
+    from shared.exceptions.repository import RepositoryError
+
+    mock = MagicMock(spec=AuthService)
+    mock.login.side_effect = RepositoryError("connection lost")
+    app.dependency_overrides[get_auth_service] = lambda: mock
+    try:
+        response = client.post(
+            "/auth/login",
+            json={"email": "user@example.com", "password": "SecurePass1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert "internal error" in response.json()["detail"].lower()
+
+
+def test_authentication_exception_maps_to_401(client: TestClient) -> None:
+    from app.dependencies.auth import get_auth_service
+    from app.main import app
+    from app.services.auth_service import AuthService
+    from shared.exceptions.auth import AuthenticationException
+
+    mock = MagicMock(spec=AuthService)
+    mock.refresh.side_effect = AuthenticationException("Token rejected.")
+    app.dependency_overrides[get_auth_service] = lambda: mock
+    try:
+        response = client.post("/auth/refresh", json={"refresh_token": "token"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401

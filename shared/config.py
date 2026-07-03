@@ -12,10 +12,10 @@ import warnings
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 INSECURE_SECRET_DEFAULT = "change-me-in-production"
 
@@ -42,6 +42,19 @@ class LogLevel(StrEnum):
     WARNING = "WARNING"
     ERROR = "ERROR"
     CRITICAL = "CRITICAL"
+
+
+class EmailProvider(StrEnum):
+    """Supported transactional email transports.
+
+    ``CONSOLE`` writes messages to the application log instead of dispatching
+    them and is the safe default for local development and tests. Real
+    providers (e.g. ``SMTP``) are selected via ``EMAIL_PROVIDER`` per
+    environment; new providers can be added without touching business logic.
+    """
+
+    CONSOLE = "console"
+    SMTP = "smtp"
 
 
 class Settings(BaseSettings):
@@ -96,9 +109,102 @@ class Settings(BaseSettings):
     rate_limit_login: str = "5/minute"
     rate_limit_register: str = "5/minute"
 
+    # --- Super Admin seeding ----------------------------------------------
+    # When all four values are set and no SUPER_ADMIN user exists yet, the
+    # auth service creates the default super-admin account on startup.
+    super_admin_email: str | None = None
+    super_admin_password: str | None = None
+    super_admin_first_name: str | None = None
+    super_admin_last_name: str | None = None
+
+    # --- Email delivery ---------------------------------------------------
+    # Transport used to dispatch transactional email (verification, etc.).
+    # Defaults to CONSOLE so local development and tests never reach out to an
+    # external mail server; set EMAIL_PROVIDER=smtp in deployed environments.
+    email_provider: EmailProvider = EmailProvider.CONSOLE
+    # Envelope/branding for outgoing mail. Kept generic and overridable so the
+    # sender identity is configuration, not code.
+    email_from_address: str = "no-reply@recentthink.com"
+    email_from_name: str = "RecentThink"
+    email_support_address: str = "support@recentthink.com"
+    app_name: str = "RecentThink"
+    # Base URL the frontend serves to complete verification. The one-time token
+    # is appended as a ``token`` query parameter.
+    email_verification_url: str = "http://localhost:3000/verify-email"
+    # Lifetime of a verification token before it must be reissued.
+    email_verification_token_expire_hours: int = 24
+    # Base URL the frontend serves to complete a password reset. The one-time
+    # token is appended as a ``token`` query parameter.
+    password_reset_url: str = "http://localhost:3000/reset-password"
+    # Lifetime of a password reset token before it must be reissued.
+    password_reset_token_expire_hours: int = 1
+    # When true, ``POST /auth/change-password`` may preserve the caller's
+    # current refresh session if the client supplies a valid ``refresh_token``.
+    change_password_keep_current_session: bool = False
+
+    # --- SMTP (used when EMAIL_PROVIDER=smtp) ------------------------------
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    # STARTTLS upgrade on the SMTP connection. Disable only for local relays
+    # that do not support TLS.
+    smtp_use_tls: bool = True
+    # Socket timeout (seconds) so a stalled mail server cannot hang a request.
+    smtp_timeout_seconds: int = 10
+
+    # --- CORS ----------------------------------------------------------------
+    # Comma-separated list of allowed browser origins. Wildcard ``*`` is
+    # rejected — every environment must declare explicit origins.
+    #
+    # ``NoDecode`` disables pydantic-settings' default JSON decoding for these
+    # list fields so a plain comma-separated ``.env`` value (e.g.
+    # ``CORS_ORIGINS=http://localhost:3000,https://app.example.com``) is parsed
+    # by the ``field_validator`` below instead of being treated as JSON.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"],
+    )
+    cors_allow_credentials: bool = True
+    cors_allow_methods: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
+    cors_allow_headers: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["Authorization", "Content-Type", "X-Request-ID"],
+    )
+
+    # --- Sentry (production monitoring) ------------------------------------
+    sentry_dsn: str | None = None
+    sentry_environment: str | None = None
+    sentry_release: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+
     # --- AI providers (configured now, used in a later phase) -------------
     openai_api_key: str | None = None
     google_api_key: str | None = None
+
+    @field_validator(
+        "cors_origins",
+        "cors_allow_methods",
+        "cors_allow_headers",
+        mode="before",
+    )
+    @classmethod
+    def _parse_csv_list(cls, value: object) -> list[str]:
+        """Accept a comma-separated string or a list of values."""
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+    @model_validator(mode="after")
+    def _reject_wildcard_cors(self) -> Self:
+        """Disallow wildcard CORS origins in every environment."""
+        if "*" in self.cors_origins:
+            raise ValueError(
+                "CORS_ORIGINS must not contain '*'; declare explicit origins.",
+            )
+        return self
 
     @property
     def is_production(self) -> bool:
@@ -132,6 +238,20 @@ class Settings(BaseSettings):
             f"'{self.environment}' environment; the insecure default is not "
             f"allowed outside local development.",
         )
+
+    @model_validator(mode="after")
+    def _validate_smtp_configuration(self) -> Self:
+        """Ensure SMTP delivery is fully configured when selected.
+
+        Fails fast at startup rather than surfacing a delivery error on the
+        first verification email if ``EMAIL_PROVIDER=smtp`` but the host is
+        missing.
+        """
+        if self.email_provider is EmailProvider.SMTP and not self.smtp_host:
+            raise ValueError(
+                "SMTP_HOST must be set when EMAIL_PROVIDER is 'smtp'.",
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

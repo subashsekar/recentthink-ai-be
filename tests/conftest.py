@@ -13,6 +13,9 @@ from shared.config import Settings
 def _force_test_environment() -> None:
     """Force the ``ENVIRONMENT`` variable to ``test`` for every test."""
     os.environ["ENVIRONMENT"] = "test"
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
 
 
 @pytest.fixture
