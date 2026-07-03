@@ -30,10 +30,16 @@ from shared.database import engine  # noqa: E402
 
 @pytest.fixture
 def db_session() -> Iterator[Session]:
-    """Yield a database session that rolls back all changes after each test."""
+    """Yield a database session that rolls back all changes after each test.
+
+    ``join_transaction_mode="create_savepoint"`` makes the code under test
+    commit to a SAVEPOINT rather than the real transaction, so the outer
+    ``transaction.rollback()`` reliably undoes everything and tests never
+    pollute the database.
+    """
     connection = engine.connect()
     transaction = connection.begin()
-    session = Session(bind=connection)
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
 
     try:
         yield session

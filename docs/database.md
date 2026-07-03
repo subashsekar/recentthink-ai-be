@@ -38,11 +38,18 @@ NAMING_CONVENTION = {
 This produces names like `pk_users`, `uq_admins_email`, keeping Alembic
 autogeneration diffs stable across environments.
 
-## Models
+## Model base classes & mixins
 
-ORM models combine the shared `TimestampedModel` (adds timezone-aware
-`created_at` / `updated_at`) with the SQLAlchemy `Base`, using SQLAlchemy 2.x
-typed `Mapped[...]` / `mapped_column(...)` style:
+`shared/models/` provides two reusable, abstract bases (SQLAlchemy 2.x typed
+`Mapped[...]` / `mapped_column(...)` style):
+
+| Base / mixin | Columns added | Use for |
+|--------------------|-------------------------------|-----------------------------------|
+| `CreatedAtMixin` / `CreatedAtModel` | `created_at` | Insert-only rows (e.g. one-time tokens) |
+| `TimestampMixin` / `TimestampedModel` | `created_at` + `updated_at` | Mutable entities (users, admins) |
+
+`TimestampMixin` extends `CreatedAtMixin`, so there is a single definition of
+`created_at`.
 
 ```python
 class User(TimestampedModel, Base):
@@ -50,20 +57,60 @@ class User(TimestampedModel, Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     ...
+
+class RefreshToken(CreatedAtModel, Base):
+    __tablename__ = "refresh_tokens"
+    ...
 ```
 
-The `User` and `Admin` models currently live in `auth_service`, which owns the
-initial migrations.
+## Authentication schema (`auth_service`)
+
+`auth_service` owns the migrations and the following tables:
+
+| Table | Purpose | Key columns |
+|-------------------------------|--------------------------------------|-----------------------------------------------|
+| `users` | Identity/credentials | `id` (UUID PK), `email` (unique), `password_hash`, `role`, `is_verified`, `is_active` |
+| `admins` | Administrator accounts | `id` (UUID PK), `email` (unique), ... |
+| `refresh_tokens` | Long-lived session tokens | FK `user_id` (CASCADE, indexed), `token` (indexed), `expires_at`, `is_revoked` |
+| `email_verification_tokens` | One-time email confirmation | FK `user_id` (CASCADE, indexed), `token` (unique), `expires_at`, `is_used` |
+| `password_reset_tokens` | One-time password reset | FK `user_id` (CASCADE, indexed), `token` (unique), `expires_at`, `is_used` |
+
+`role` is stored as a non-native enum (`VARCHAR(50)`) from the reusable
+`Role` enum (`SUPER_ADMIN`, `ADMIN`, `USER`; default `USER`). Each token table
+has an index on its `user_id` foreign key for fast per-user lookups. `email`
+relies on the unique constraint's implicit index (no separate `index=True`).
+
+Deleting a `User` cascades to all related token rows via
+`relationship(cascade="all, delete-orphan")` on the ORM side and
+`ON DELETE CASCADE` on the database foreign keys.
+
+## Schemas: DB layer vs. API layer
+
+Schemas are split so credential material is never serialized to clients:
+
+- **Database-layer** (`app/schemas/user.py`, `refresh_token.py`) — model the
+  repository boundary. `UserCreate`/`UserUpdate` carry `password_hash`;
+  `UserRead` deliberately **excludes** it.
+- **API-facing** (`app/schemas/responses.py`) — `UserResponse`,
+  `CurrentUserResponse`, `LoginResponse`. These are the only schemas returned
+  from HTTP endpoints and never expose `password_hash`.
 
 ## Repositories
 
-Data access is encapsulated in repository classes
-(`UserRepository`, `AdminRepository`) that:
+Data access is encapsulated in repository classes (`UserRepository`,
+`AdminRepository`, `RefreshTokenRepository`, `EmailVerificationRepository`,
+`PasswordResetRepository`) that:
 
 - accept a `Session` via constructor injection,
+- expose only database operations (no business logic),
 - translate SQLAlchemy errors into shared domain exceptions
   (`DuplicateEmailError`, `RecordNotFoundError`, `RepositoryError`),
 - log each operation via the shared logger.
+
+`UserRepository.update_user()` only writes whitelisted columns
+(`UserRepository.EDITABLE_FIELDS`); unknown keys raise `ValueError`.
+`RefreshTokenRepository` additionally provides `get_active_refresh_tokens()`,
+`revoke_all_tokens()`, and `delete_expired_tokens()` for session management.
 
 ## Alembic workflow
 
@@ -83,10 +130,13 @@ Common commands (Makefile targets shown; raw commands in parentheses):
 
 ### Verified upgrade/downgrade cycle
 
+The full cycle is exercised in CI (see `.github/workflows/ci.yml`) so every
+revision's `downgrade()` is validated on each push:
+
 ```bash
-uv run alembic upgrade head     # create admins + users, then add profile_image
-uv run alembic downgrade -1     # drop profile_image
-uv run alembic upgrade head     # re-apply
+uv run alembic upgrade head      # apply all revisions
+uv run alembic downgrade base    # roll every revision back
+uv run alembic upgrade head      # re-apply, leaving the schema at head
 ```
 
 ## Seeding

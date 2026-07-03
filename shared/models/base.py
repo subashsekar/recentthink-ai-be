@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.models.mixins import TimestampMixin
+from shared.models.mixins import CreatedAtMixin, TimestampMixin
 
 
 class TimestampedModel(TimestampMixin):
@@ -12,6 +12,18 @@ class TimestampedModel(TimestampMixin):
     combine this with the SQLAlchemy declarative ``Base``, for example::
 
         class User(TimestampedModel, Base):
+            ...
+    """
+
+    __abstract__ = True
+
+
+class CreatedAtModel(CreatedAtMixin):
+    """Abstract ORM base adding only a ``created_at`` column.
+
+    For insert-only records such as one-time tokens::
+
+        class RefreshToken(CreatedAtModel, Base):
             ...
     """
 

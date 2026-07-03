@@ -42,25 +42,52 @@ def test_refresh_token_create_and_lookup(
     refresh_token_repository: RefreshTokenRepository,
     created_user,
 ) -> None:
-    """Create a refresh token and fetch it by token string."""
-    token_value = f"refresh-{uuid.uuid4().hex}"
+    """Create a refresh token (stored as a hash) and fetch it by hash."""
+    token_hash = f"hash-{uuid.uuid4().hex}"
     expires_at = datetime.now(tz=UTC) + timedelta(days=7)
 
     created = refresh_token_repository.create_refresh_token(
         user_id=created_user.id,
-        token=token_value,
+        token_hash=token_hash,
         expires_at=expires_at,
     )
 
     assert created.id is not None
     assert created.user_id == created_user.id
-    assert created.token == token_value
+    assert created.token == token_hash
     assert created.is_revoked is False
     assert created.created_at is not None
 
-    fetched = refresh_token_repository.get_by_token(token_value)
+    fetched = refresh_token_repository.get_by_token_hash(token_hash)
     assert fetched is not None
     assert fetched.id == created.id
+
+
+def test_refresh_token_rotation_is_atomic(
+    refresh_token_repository: RefreshTokenRepository,
+    created_user,
+) -> None:
+    """Rotation revokes the old token and creates the new one in one commit."""
+    now = datetime.now(tz=UTC)
+    old = refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"old-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(days=7),
+    )
+    new_hash = f"new-{uuid.uuid4().hex}"
+
+    new_token = refresh_token_repository.rotate_token(
+        old_token_id=old.id,
+        user_id=created_user.id,
+        new_token_hash=new_hash,
+        new_expires_at=now + timedelta(days=7),
+    )
+
+    refreshed_old = refresh_token_repository.get_by_id(old.id)
+    assert refreshed_old is not None
+    assert refreshed_old.is_revoked is True
+    assert new_token.is_revoked is False
+    assert refresh_token_repository.get_by_token_hash(new_hash) is not None
 
 
 def test_email_verification_token_create(
@@ -123,7 +150,7 @@ def test_user_token_relationships(
 
     refresh_token_repository.create_refresh_token(
         user_id=user.id,
-        token=f"refresh-{uuid.uuid4().hex}",
+        token_hash=f"refresh-{uuid.uuid4().hex}",
         expires_at=expires_at,
     )
     email_verification_repository.create_token(
@@ -158,6 +185,83 @@ def test_user_token_relationships(
     assert reset_count == 1
 
 
+def test_get_active_refresh_tokens_excludes_revoked_and_expired(
+    refresh_token_repository: RefreshTokenRepository,
+    created_user,
+) -> None:
+    """Only non-revoked, non-expired tokens are returned as active."""
+    now = datetime.now(tz=UTC)
+
+    active = refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"active-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(days=7),
+    )
+    revoked = refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"revoked-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(days=7),
+    )
+    refresh_token_repository.revoke_token(revoked.id)
+    refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"expired-{uuid.uuid4().hex}",
+        expires_at=now - timedelta(days=1),
+    )
+
+    active_tokens = refresh_token_repository.get_active_refresh_tokens(
+        created_user.id
+    )
+    active_ids = {token.id for token in active_tokens}
+
+    assert active.id in active_ids
+    assert revoked.id not in active_ids
+    assert len(active_tokens) == 1
+
+
+def test_revoke_all_tokens(
+    refresh_token_repository: RefreshTokenRepository,
+    created_user,
+) -> None:
+    """Revoking all tokens marks every active token as revoked."""
+    now = datetime.now(tz=UTC)
+    for _ in range(3):
+        refresh_token_repository.create_refresh_token(
+            user_id=created_user.id,
+            token_hash=f"refresh-{uuid.uuid4().hex}",
+            expires_at=now + timedelta(days=7),
+        )
+
+    revoked_count = refresh_token_repository.revoke_all_tokens(created_user.id)
+
+    assert revoked_count == 3
+    assert refresh_token_repository.get_active_refresh_tokens(created_user.id) == []
+
+
+def test_delete_expired_tokens(
+    db_session: Session,
+    refresh_token_repository: RefreshTokenRepository,
+    created_user,
+) -> None:
+    """Expired tokens are deleted; valid tokens are retained."""
+    now = datetime.now(tz=UTC)
+    valid = refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"valid-{uuid.uuid4().hex}",
+        expires_at=now + timedelta(days=7),
+    )
+    refresh_token_repository.create_refresh_token(
+        user_id=created_user.id,
+        token_hash=f"expired-{uuid.uuid4().hex}",
+        expires_at=now - timedelta(days=1),
+    )
+
+    deleted_count = refresh_token_repository.delete_expired_tokens()
+
+    assert deleted_count >= 1
+    assert refresh_token_repository.get_by_id(valid.id) is not None
+
+
 def test_cascade_delete_removes_tokens(
     db_session: Session,
     user_repository: UserRepository,
@@ -172,7 +276,7 @@ def test_cascade_delete_removes_tokens(
 
     refresh_token_repository.create_refresh_token(
         user_id=user.id,
-        token=f"refresh-{uuid.uuid4().hex}",
+        token_hash=f"refresh-{uuid.uuid4().hex}",
         expires_at=expires_at,
     )
     email_verification_repository.create_token(
@@ -189,13 +293,19 @@ def test_cascade_delete_removes_tokens(
     user_repository.delete_user(user.id)
 
     refresh_count = db_session.scalar(
-        select(func.count()).select_from(RefreshToken)
+        select(func.count())
+        .select_from(RefreshToken)
+        .where(RefreshToken.user_id == user.id)
     )
     verify_count = db_session.scalar(
-        select(func.count()).select_from(EmailVerificationToken)
+        select(func.count())
+        .select_from(EmailVerificationToken)
+        .where(EmailVerificationToken.user_id == user.id)
     )
     reset_count = db_session.scalar(
-        select(func.count()).select_from(PasswordResetToken)
+        select(func.count())
+        .select_from(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id)
     )
 
     assert refresh_count == 0

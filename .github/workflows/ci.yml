@@ -65,8 +65,13 @@ jobs:
             ( cd "services/$svc" && MYPYPATH=. uv run mypy --explicit-package-bases app ) || exit 1
           done
 
-      - name: Alembic (apply migrations)
-        run: uv run alembic upgrade head
+      - name: Alembic (migration smoke test)
+        # Exercise the full upgrade/downgrade cycle so every revision's
+        # downgrade() is verified, then leave the schema at head for the tests.
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
 
       - name: Pytest (with coverage)
         run: uv run pytest

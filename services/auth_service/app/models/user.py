@@ -36,7 +36,9 @@ class User(TimestampedModel, Base):
     )
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # ``unique=True`` already creates a unique index on PostgreSQL, so no
+    # separate ``index=True`` is needed (that would be a redundant second index).
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="user_role", native_enum=False, length=50),

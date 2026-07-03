@@ -11,12 +11,17 @@ from __future__ import annotations
 import warnings
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Self
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET_DEFAULT = "change-me-in-production"
+
+# Absolute path to the repo-root ``.env`` so settings load identically no
+# matter which directory a service or tool is launched from.
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class Environment(StrEnum):
@@ -48,7 +53,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -63,10 +68,33 @@ class Settings(BaseSettings):
         "postgresql+psycopg://recentthink:recentthink@localhost:5432/recentthink"
     )
 
-    # --- Security / Auth (configured now, used in a later phase) ----------
+    # --- Security / Auth --------------------------------------------------
+    # Signing key for JWT access tokens. Must be overridden with a strong,
+    # random value in every deployed environment (enforced below).
     secret_key: str = INSECURE_SECRET_DEFAULT
+    # Symmetric signing algorithm for access tokens. HS256 is suitable while a
+    # single service issues and verifies tokens; switch to an asymmetric
+    # algorithm (e.g. RS256) if independent services need to verify tokens
+    # without sharing the secret.
     jwt_algorithm: str = "HS256"
+    # Access-token lifetime. Short-lived by design; clients use refresh tokens
+    # to obtain new access tokens.
     access_token_expire_minutes: int = 30
+    # Refresh-token lifetime. Refresh tokens are opaque, hashed at rest, and
+    # rotated on every use.
+    refresh_token_expire_days: int = 7
+    # Registered ``iss``/``aud`` claims embedded in and validated on every
+    # access token, scoping tokens to this issuer and its intended audience.
+    jwt_issuer: str = "recentthink-auth"
+    jwt_audience: str = "recentthink-clients"
+
+    # --- Rate limiting ----------------------------------------------------
+    # Per-IP throttling for unauthenticated auth endpoints. Structured so a
+    # future API gateway can own rate limiting instead: disable here
+    # (``RATE_LIMIT_ENABLED=false``) once the gateway enforces the limits.
+    rate_limit_enabled: bool = True
+    rate_limit_login: str = "5/minute"
+    rate_limit_register: str = "5/minute"
 
     # --- AI providers (configured now, used in a later phase) -------------
     openai_api_key: str | None = None

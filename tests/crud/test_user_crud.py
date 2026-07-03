@@ -134,3 +134,14 @@ def test_user_delete_missing_record_raises(
     """Error handling: delete on missing record raises RecordNotFoundError."""
     with pytest.raises(RecordNotFoundError):
         user_repository.delete_user(uuid.uuid4())
+
+
+def test_user_update_rejects_non_editable_field(
+    user_repository: UserRepository,
+    user_payload: dict[str, str],
+) -> None:
+    """Whitelist: updating a non-editable field raises ValueError."""
+    created = user_repository.create_user(**user_payload)
+
+    with pytest.raises(ValueError):
+        user_repository.update_user(created.id, id=uuid.uuid4())

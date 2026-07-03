@@ -1,6 +1,11 @@
 """Shared ORM building blocks."""
 
-from shared.models.base import TimestampedModel
-from shared.models.mixins import TimestampMixin
+from shared.models.base import CreatedAtModel, TimestampedModel
+from shared.models.mixins import CreatedAtMixin, TimestampMixin
 
-__all__ = ["TimestampMixin", "TimestampedModel"]
+__all__ = [
+    "CreatedAtMixin",
+    "CreatedAtModel",
+    "TimestampMixin",
+    "TimestampedModel",
+]

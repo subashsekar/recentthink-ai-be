@@ -7,25 +7,29 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.database import Base
+from shared.models import CreatedAtModel
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class RefreshToken(Base):
+class RefreshToken(CreatedAtModel, Base):
     """Long-lived session token stored in the ``refresh_tokens`` table.
 
     Issued alongside access tokens so clients can obtain new credentials
     without re-authenticating. Revoked tokens remain for audit purposes.
+
+    The ``token`` column stores the SHA-256 hash of the raw refresh token,
+    never the raw value itself, so a database compromise cannot expose usable
+    session credentials.
     """
 
     __tablename__ = "refresh_tokens"
-    __table_args__ = (Index("ix_refresh_tokens_token", "token"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -35,9 +39,10 @@ class RefreshToken(Base):
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
         nullable=False,
     )
-    token: Mapped[str] = mapped_column(String(512), nullable=False)
+    token: Mapped[str] = mapped_column(String(512), index=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -46,11 +51,6 @@ class RefreshToken(Base):
         Boolean,
         default=False,
         server_default="false",
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
         nullable=False,
     )
 

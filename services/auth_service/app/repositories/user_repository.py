@@ -20,6 +20,20 @@ logger = get_logger(__name__)
 class UserRepository:
     """Repository for :class:`User` persistence operations."""
 
+    # Columns a caller is allowed to modify through :meth:`update_user`.
+    # Excludes ``id`` and the timestamp columns, which are managed by the ORM.
+    EDITABLE_FIELDS: frozenset[str] = frozenset(
+        {
+            "first_name",
+            "last_name",
+            "email",
+            "password_hash",
+            "role",
+            "is_verified",
+            "is_active",
+        }
+    )
+
     def __init__(self, db: Session) -> None:
         self._db = db
 
@@ -83,7 +97,18 @@ class UserRepository:
             raise RepositoryError("Failed to fetch user.") from exc
 
     def update_user(self, user_id: UUID, **fields: Any) -> User:
-        """Persist changes to an existing user record."""
+        """Persist changes to an existing user record.
+
+        Only whitelisted columns (:attr:`EDITABLE_FIELDS`) may be updated;
+        passing any other key raises :class:`ValueError` so that non-editable
+        or unknown attributes cannot be silently written.
+        """
+        unknown = set(fields) - self.EDITABLE_FIELDS
+        if unknown:
+            raise ValueError(
+                f"Cannot update non-editable field(s): {sorted(unknown)}"
+            )
+
         user = self.get_user_by_id(user_id)
         if user is None:
             logger.warning("User not found for update id=%s", user_id)
@@ -98,8 +123,7 @@ class UserRepository:
                 )
 
         for key, value in fields.items():
-            if hasattr(user, key):
-                setattr(user, key, value)
+            setattr(user, key, value)
 
         try:
             self._db.commit()

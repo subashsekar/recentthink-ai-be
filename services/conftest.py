@@ -20,6 +20,14 @@ def service_test_setup(service_root: Path) -> None:
     for name in app_modules:
         sys.modules.pop(name, None)
 
+    if app_modules:
+        from sqlalchemy.orm import clear_mappers
+
+        from shared.database import Base
+
+        clear_mappers()
+        Base.metadata.clear()
+
     for sibling in SERVICES_DIR.iterdir():
         if not sibling.is_dir():
             continue
