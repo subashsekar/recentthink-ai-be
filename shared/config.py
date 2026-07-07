@@ -18,6 +18,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 INSECURE_SECRET_DEFAULT = "change-me-in-production"
+INSECURE_INTERNAL_SERVICE_TOKEN_DEFAULT = "dev-internal-service-token"
 
 # Absolute path to the repo-root ``.env`` so settings load identically no
 # matter which directory a service or tool is launched from.
@@ -178,9 +179,19 @@ class Settings(BaseSettings):
     sentry_release: str | None = None
     sentry_traces_sample_rate: float = 0.1
 
-    # --- AI providers (configured now, used in a later phase) -------------
+    # --- AI providers -----------------------------------------------------
     openai_api_key: str | None = None
     google_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_timeout_seconds: int = 120
+
+    # --- Inter-service URLs -----------------------------------------------
+    usage_service_url: str = "http://localhost:8005"
+    auth_service_url: str = "http://localhost:8001"
+    # Shared secret for service-to-service calls (e.g. AI Service → Usage Service).
+    internal_service_token: str = INSECURE_INTERNAL_SERVICE_TOKEN_DEFAULT
 
     @field_validator(
         "cors_origins",
@@ -215,6 +226,24 @@ class Settings(BaseSettings):
     def is_local(self) -> bool:
         """Return ``True`` for local/test development environments."""
         return self.environment in {Environment.LOCAL, Environment.TEST}
+
+    @model_validator(mode="after")
+    def _enforce_secure_internal_service_token(self) -> Self:
+        """Reject the insecure internal token default outside local development."""
+        if self.internal_service_token != INSECURE_INTERNAL_SERVICE_TOKEN_DEFAULT:
+            return self
+        if self.is_local:
+            warnings.warn(
+                "INTERNAL_SERVICE_TOKEN is using the insecure default value; set a "
+                "strong INTERNAL_SERVICE_TOKEN before deploying.",
+                stacklevel=2,
+            )
+            return self
+        raise ValueError(
+            f"INTERNAL_SERVICE_TOKEN must be set to a secure value in the "
+            f"'{self.environment}' environment; the insecure default is not "
+            f"allowed outside local development.",
+        )
 
     @model_validator(mode="after")
     def _enforce_secure_secret_key(self) -> Self:

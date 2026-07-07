@@ -7,8 +7,6 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import get_db
-
 
 def _verify_user(db_session: object, email: str) -> None:
     """Mark a registered user as verified so login is permitted in tests."""
@@ -25,6 +23,7 @@ def _verify_user(db_session: object, email: str) -> None:
 @pytest.fixture
 def auth_api_client(db_session: object) -> Iterator[TestClient]:
     """Provide a test client backed by the rolled-back CRUD test session."""
+    from app.database import get_db
     from app.main import app
 
     def override_get_db() -> Iterator[object]:

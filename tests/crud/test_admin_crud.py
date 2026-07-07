@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 import pytest
-from app.repositories.admin_repository import AdminRepository
 
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError
+
+if TYPE_CHECKING:
+    from app.repositories.admin_repository import AdminRepository
 
 pytestmark = pytest.mark.db
 

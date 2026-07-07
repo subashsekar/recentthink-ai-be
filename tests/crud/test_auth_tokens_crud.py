@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
-from app.repositories.email_verification_repository import EmailVerificationRepository
-from app.repositories.password_reset_repository import PasswordResetRepository
-from app.repositories.refresh_token_repository import RefreshTokenRepository
-from app.repositories.user_repository import UserRepository
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.email_verification_token import EmailVerificationToken
-from app.models.password_reset_token import PasswordResetToken
-from app.models.refresh_token import RefreshToken
+if TYPE_CHECKING:
+    from app.repositories.email_verification_repository import (
+        EmailVerificationRepository,
+    )
+    from app.repositories.password_reset_repository import PasswordResetRepository
+    from app.repositories.refresh_token_repository import RefreshTokenRepository
+    from app.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.db
 
@@ -178,6 +179,10 @@ def test_user_token_relationships(
     user_payload: dict[str, str],
 ) -> None:
     """Token records are associated with the owning user via foreign keys."""
+    from app.models.email_verification_token import EmailVerificationToken
+    from app.models.password_reset_token import PasswordResetToken
+    from app.models.refresh_token import RefreshToken
+
     user = user_repository.create_user(**user_payload)
     expires_at = datetime.now(tz=UTC) + timedelta(hours=1)
 
@@ -304,6 +309,10 @@ def test_cascade_delete_removes_tokens(
     user_payload: dict[str, str],
 ) -> None:
     """Deleting a user cascades to all related token records."""
+    from app.models.email_verification_token import EmailVerificationToken
+    from app.models.password_reset_token import PasswordResetToken
+    from app.models.refresh_token import RefreshToken
+
     user = user_repository.create_user(**user_payload)
     expires_at = datetime.now(tz=UTC) + timedelta(hours=1)
 

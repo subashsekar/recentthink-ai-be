@@ -11,15 +11,49 @@ from sqlalchemy import create_engine, pool
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUTH_SERVICE_ROOT = REPO_ROOT / "services" / "auth_service"
+AI_SERVICE_ROOT = REPO_ROOT / "services" / "ai_service"
+USAGE_SERVICE_ROOT = REPO_ROOT / "services" / "usage_service"
 
 sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(AUTH_SERVICE_ROOT))
 
-from app.models.admin import Admin  # noqa: E402, F401
-from app.models.email_verification_token import EmailVerificationToken  # noqa: E402, F401
-from app.models.password_reset_token import PasswordResetToken  # noqa: E402, F401
-from app.models.refresh_token import RefreshToken  # noqa: E402, F401
-from app.models.user import User  # noqa: E402, F401
+
+def _clear_app_modules() -> None:
+    """Remove cached ``app`` packages so another service can be imported."""
+    for name in list(sys.modules):
+        if name == "app" or name.startswith("app."):
+            sys.modules.pop(name, None)
+
+
+def _import_auth_models() -> None:
+    sys.path.insert(0, str(AUTH_SERVICE_ROOT))
+    from app.models.admin import Admin  # noqa: F401
+    from app.models.email_verification_token import EmailVerificationToken  # noqa: F401
+    from app.models.password_reset_token import PasswordResetToken  # noqa: F401
+    from app.models.refresh_token import RefreshToken  # noqa: F401
+    from app.models.user import User  # noqa: F401
+
+
+def _import_ai_models() -> None:
+    _clear_app_modules()
+    sys.path.insert(0, str(AI_SERVICE_ROOT))
+    from app.models.agent_execution import AgentExecution  # noqa: F401
+    from app.models.ai_message import AIMessage  # noqa: F401
+    from app.models.ai_session import AISession  # noqa: F401
+    from app.models.conversation_memory import ConversationMemory  # noqa: F401
+    from app.models.leetcode_progress import LeetCodeProgress  # noqa: F401
+    from app.models.model_usage import ModelUsage  # noqa: F401
+    from app.models.prompt_version import PromptVersion  # noqa: F401
+
+
+def _import_usage_models() -> None:
+    _clear_app_modules()
+    sys.path.insert(0, str(USAGE_SERVICE_ROOT))
+    from app.models.usage_record import UsageRecord  # noqa: F401
+
+
+_import_auth_models()
+_import_ai_models()
+_import_usage_models()
 
 from shared.config import get_settings  # noqa: E402
 from shared.database import Base, normalize_database_url  # noqa: E402

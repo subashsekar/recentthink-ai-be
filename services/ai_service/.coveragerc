@@ -1,0 +1,21 @@
+[run]
+source = app
+omit =
+    app/agents/hackerrank/*
+    app/agents/dsa_tutor/*
+    app/agents/interview/*
+    app/agents/course_generator/*
+    app/repositories/*
+    app/dependencies/*
+    app/models/leetcode*
+    app/models/chat_message.py
+    app/models/agent_run.py
+    app/schemas/leetcode.py
+    app/database/*
+    app/middleware/*
+    app/utils/leetcode_url.py
+    app/utils/html_text.py
+
+[report]
+show_missing = true
+fail_under = 90

@@ -22,20 +22,19 @@ from shared.database import engine  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _reload_auth_service_models() -> Iterator[None]:
-    """Re-register ORM mappers after auth-service unit tests clear them."""
+    """Re-register ORM mappers after other suites clear or replace ``app``."""
     app_modules = [
         name for name in list(sys.modules) if name == "app" or name.startswith("app.")
     ]
     for name in app_modules:
         sys.modules.pop(name, None)
 
-    if app_modules:
-        from sqlalchemy.orm import clear_mappers
+    from sqlalchemy.orm import clear_mappers
 
-        from shared.database import Base
+    from shared.database import Base
 
-        clear_mappers()
-        Base.metadata.clear()
+    clear_mappers()
+    Base.metadata.clear()
 
     auth_service_root_str = str(AUTH_SERVICE_ROOT)
     if auth_service_root_str not in sys.path:

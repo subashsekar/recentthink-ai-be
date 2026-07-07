@@ -1,0 +1,1 @@
+"""HackerRank agent schemas (scaffold)."""

@@ -7,7 +7,6 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import get_db
 from shared.config import Settings
 
 
@@ -28,6 +27,7 @@ def admin_api_client(
     admin_seed_settings: Settings,
 ) -> Iterator[TestClient]:
     """Test client with DB session and a seeded super-admin account."""
+    from app.database import get_db
     from app.main import app
     from app.services.super_admin_seed_service import seed_super_admin
 

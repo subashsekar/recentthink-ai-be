@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 import pytest
-from app.models.enums import Role
-from app.repositories.user_repository import UserRepository
 
 from shared.exceptions import DuplicateEmailError, RecordNotFoundError
+
+if TYPE_CHECKING:
+    from app.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.db
 
@@ -30,6 +32,8 @@ def test_user_create_read(
     user_payload: dict[str, str],
 ) -> None:
     """INSERT and READ: create a user and fetch by id and email."""
+    from app.models.enums import Role
+
     created = user_repository.create_user(**user_payload)
 
     assert created.id is not None
@@ -56,6 +60,8 @@ def test_user_role_default(
     user_payload: dict[str, str],
 ) -> None:
     """Role defaults to USER when not explicitly provided."""
+    from app.models.enums import Role
+
     created = user_repository.create_user(**user_payload)
     assert created.role is Role.USER
 
@@ -65,6 +71,8 @@ def test_user_update(
     user_payload: dict[str, str],
 ) -> None:
     """UPDATE: modify an existing user record."""
+    from app.models.enums import Role
+
     created = user_repository.create_user(**user_payload)
 
     updated = user_repository.update_user(
