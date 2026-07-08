@@ -89,6 +89,7 @@ def test_analyze_success(client: TestClient, mock_leetcode_service: MagicMock) -
         slug="two-sum",
         url="https://leetcode.com/problems/two-sum/",
         description="Find two numbers.",
+        problem_statement_markdown="### Example 1\n\n**Input:**\n\n```\nnums = [2,7]\n```",
     )
     mock_leetcode_service.analyze = AsyncMock(
         return_value=AnalyzeResponse(
@@ -122,6 +123,37 @@ def test_analyze_success(client: TestClient, mock_leetcode_service: MagicMock) -
     )
     assert response.status_code == 200
     assert response.json()["problem"]["title"] == "Two Sum"
+    assert "problem_statement_markdown" in response.json()["problem"]
+
+
+def test_analyze_stream_returns_problem_statement_event(
+    client: TestClient,
+    mock_leetcode_service: MagicMock,
+) -> None:
+    session_id = uuid4()
+    async def stream_events(_user, _request):
+        yield (
+            'data: {"type": "problem_statement", '
+            '"problem_statement_markdown": "### Example 1"}\n\n'
+        )
+        yield (
+            f'data: {{"type": "complete", "session_id": "{session_id}", '
+            '"status": "COMPLETED"}}\n\n'
+        )
+
+    mock_leetcode_service.analyze_stream = stream_events
+    response = client.post(
+        "/leetcode/analyze?stream=true",
+        json={"problem_url": "https://leetcode.com/problems/two-sum/"},
+        headers={
+            "Authorization": "Bearer fake-token",
+            "Accept": "text/event-stream",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"type": "problem_statement"' in response.text
+    assert "problem_statement_markdown" in response.text
 
 
 def test_follow_up_endpoint(client: TestClient, mock_leetcode_service: MagicMock) -> None:

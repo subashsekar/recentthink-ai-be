@@ -26,7 +26,9 @@ from app.core.rate_limit import (
 )
 from app.dependencies.auth import AuthenticatedUser, require_authenticated_user
 from app.schemas.common import ErrorResponse
+from app.utils.streaming import should_stream
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/leetcode", tags=["leetcode"])
 
@@ -52,8 +54,13 @@ async def analyze_problem(
     payload: AnalyzeRequest,
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
     leetcode_service: LeetCodeService = Depends(get_leetcode_service),
-) -> AnalyzeResponse | ManualInputRequiredResponse:
+) -> AnalyzeResponse | ManualInputRequiredResponse | StreamingResponse:
     """Analyze a LeetCode problem via the shared single-LLM workflow."""
+    if should_stream(request):
+        return StreamingResponse(
+            leetcode_service.analyze_stream(current_user, payload),
+            media_type="text/event-stream",
+        )
     return await leetcode_service.analyze(current_user, payload)
 
 

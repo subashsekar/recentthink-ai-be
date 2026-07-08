@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 import httpx
 
 from app.agents.leetcode.schemas import ProblemData, ProblemExample
 from app.utils.html_text import html_to_text
+from app.utils.leetcode_markdown import parse_leetcode_html, plain_text_to_markdown
 from app.utils.leetcode_url import extract_leetcode_slug, normalize_leetcode_url
 from shared.logging import get_logger
 
@@ -92,8 +92,17 @@ class LeetCodeProblemFetcher:
                 error="Problem not found on LeetCode. Check the URL or paste the statement manually.",
             )
 
-        description = html_to_text(question.get("content") or "")
-        examples = self._parse_examples(question.get("exampleTestcases"))
+        raw_html = question.get("content") or ""
+        markdown, parsed_examples, constraints = parse_leetcode_html(raw_html)
+        examples = [
+            ProblemExample(
+                input=item.input,
+                output=item.output,
+                explanation=item.explanation,
+            )
+            for item in parsed_examples
+        ]
+        description = html_to_text(raw_html)
         topics = [tag["name"] for tag in question.get("topicTags") or [] if tag.get("name")]
 
         problem = ProblemData(
@@ -103,8 +112,9 @@ class LeetCodeProblemFetcher:
             description=description,
             difficulty=question.get("difficulty"),
             examples=examples,
-            constraints=self._extract_constraints(description),
+            constraints=constraints,
             topics=topics,
+            problem_statement_markdown=markdown or plain_text_to_markdown(description),
         )
         return ProblemFetchResult(success=True, problem=problem)
 
@@ -117,45 +127,34 @@ class LeetCodeProblemFetcher:
     ) -> ProblemData:
         """Construct problem data from user-provided manual input."""
         safe_slug = slug or title.lower().replace(" ", "-")
+        stripped = statement.strip()
+        markdown = plain_text_to_markdown(stripped)
         return ProblemData(
             title=title,
             slug=safe_slug,
             url=normalize_leetcode_url(safe_slug),
-            description=statement.strip(),
+            description=stripped,
             difficulty=None,
             examples=[],
-            constraints=self._extract_constraints(statement),
+            constraints=self._extract_constraints_from_text(stripped),
             topics=[],
+            problem_statement_markdown=markdown,
         )
 
     @staticmethod
-    def _parse_examples(raw: str | None) -> list[ProblemExample]:
-        if not raw:
-            return []
-        blocks = [block.strip() for block in raw.strip().split("\n") if block.strip()]
-        examples: list[ProblemExample] = []
-        for index, block in enumerate(blocks):
-            lines = block.split("\n")
-            examples.append(
-                ProblemExample(
-                    input=lines[0] if lines else block,
-                    output=lines[1] if len(lines) > 1 else "",
-                    explanation=f"Example {index + 1}",
-                ),
-            )
-        return examples
-
-    @staticmethod
-    def _extract_constraints(description: str) -> list[str]:
+    def _extract_constraints_from_text(text: str) -> list[str]:
         constraints: list[str] = []
         capture = False
-        for line in description.splitlines():
-            lower = line.lower()
+        stop_prefixes = ("follow-up", "follow up", "example", "note:")
+        for line in text.splitlines():
+            lower = line.lower().strip()
             if "constraint" in lower:
                 capture = True
                 continue
             if capture:
                 if not line.strip():
+                    break
+                if any(lower.startswith(prefix) for prefix in stop_prefixes):
                     break
                 constraints.append(line.strip())
         return constraints

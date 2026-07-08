@@ -51,6 +51,10 @@ class ProblemData(BaseModel):
     examples: list[ProblemExample] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
+    problem_statement_markdown: str | None = Field(
+        default=None,
+        description="LeetCode-style markdown for the problem statement.",
+    )
 
 
 class PlannerOutput(BaseModel):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from app.agents.leetcode.agents import LeetCodeAgents
@@ -33,6 +34,7 @@ from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.leetcode_progress_repository import LeetCodeProgressRepository
 from app.schemas.ai import ChatRequest, FollowUpRequest as PlatformFollowUpRequest
 from app.services.ai_platform_service import AIPlatformService
+from app.utils.sse import format_sse_event
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -78,26 +80,65 @@ class LeetCodeService:
         """Fetch problem context and run the shared single-LLM workflow."""
         problem, manual_required = await self._resolve_problem(request)
         if manual_required:
-            session = self._sessions.create_session(
-                user_id=user.user_id,
-                feature=AIFeature.LEETCODE,
-                title=request.title,
-                status=SessionStatus.MANUAL_REQUIRED,
-                context_metadata={
-                    "problem_url": str(request.problem_url) if request.problem_url else None,
-                },
+            return self._manual_required_response(user, request)
+        assert problem is not None
+        return await self._run_analysis(user, problem)
+
+    async def analyze_stream(
+        self,
+        user: AuthenticatedUser,
+        request: AnalyzeRequest,
+    ) -> AsyncIterator[str]:
+        """Stream problem statement markdown, then the full analysis result."""
+        problem, manual_required = await self._resolve_problem(request)
+        if manual_required:
+            response = self._manual_required_response(user, request)
+            yield format_sse_event(
+                {"type": "complete", **response.model_dump(mode="json")},
             )
-            return ManualInputRequiredResponse(
-                session_id=session.id,
-                status=SessionStatus.MANUAL_REQUIRED,
-                message=(
-                    "We could not retrieve the problem from the provided URL. "
-                    "Please paste the problem statement manually."
-                ),
-                instructions=MANUAL_INPUT_INSTRUCTIONS,
-            )
+            return
 
         assert problem is not None
+        yield format_sse_event(
+            {
+                "type": "problem_statement",
+                "problem_statement_markdown": problem.problem_statement_markdown or "",
+            },
+        )
+        response = await self._run_analysis(user, problem)
+        yield format_sse_event(
+            {"type": "complete", **response.model_dump(mode="json")},
+        )
+
+    def _manual_required_response(
+        self,
+        user: AuthenticatedUser,
+        request: AnalyzeRequest,
+    ) -> ManualInputRequiredResponse:
+        session = self._sessions.create_session(
+            user_id=user.user_id,
+            feature=AIFeature.LEETCODE,
+            title=request.title,
+            status=SessionStatus.MANUAL_REQUIRED,
+            context_metadata={
+                "problem_url": str(request.problem_url) if request.problem_url else None,
+            },
+        )
+        return ManualInputRequiredResponse(
+            session_id=session.id,
+            status=SessionStatus.MANUAL_REQUIRED,
+            message=(
+                "We could not retrieve the problem from the provided URL. "
+                "Please paste the problem statement manually."
+            ),
+            instructions=MANUAL_INPUT_INSTRUCTIONS,
+        )
+
+    async def _run_analysis(
+        self,
+        user: AuthenticatedUser,
+        problem: ProblemData,
+    ) -> AnalyzeResponse:
         start = time.perf_counter()
         try:
             chat_response = await self._platform.chat(

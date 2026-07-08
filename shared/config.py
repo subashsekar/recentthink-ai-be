@@ -190,6 +190,9 @@ class Settings(BaseSettings):
     # --- Inter-service URLs -----------------------------------------------
     usage_service_url: str = "http://localhost:8005"
     auth_service_url: str = "http://localhost:8001"
+    ai_service_url: str = "http://localhost:8004"
+    user_service_url: str = "http://localhost:8002"
+    admin_service_url: str = "http://localhost:8003"
     # Shared secret for service-to-service calls (e.g. AI Service → Usage Service).
     internal_service_token: str = INSECURE_INTERNAL_SERVICE_TOKEN_DEFAULT
 
