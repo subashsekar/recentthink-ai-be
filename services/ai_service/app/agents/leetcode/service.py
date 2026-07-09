@@ -19,6 +19,7 @@ from app.agents.leetcode.adapter import (
 from app.agents.leetcode.catalog import list_examples as catalog_examples
 from app.agents.leetcode.catalog import list_modes as catalog_modes
 from app.agents.leetcode.catalog import resolve_mode_id
+from app.coaching.registry import get_mode_registry
 from app.agents.leetcode.problem_fetcher import LeetCodeProblemFetcher
 from app.agents.leetcode.schemas import (
     AnalyzeRequest,
@@ -170,7 +171,10 @@ class LeetCodeService:
                 requested=request.model_id,
                 session_model_id=None,
             )
+            if not isinstance(resolved_model, str):
+                resolved_model = str(resolved_model)
             resolved_mode = resolve_mode_id(requested=request.mode_id)
+            mode_cfg = get_mode_registry().resolve(resolved_mode)
             chat_response = await self._platform.chat(
                 user,
                 ChatRequest(
@@ -180,6 +184,8 @@ class LeetCodeService:
                     context=build_problem_context(problem),
                     model=resolved_model,
                     mode_id=resolved_mode,
+                    temperature=mode_cfg.generation.temperature,
+                    max_tokens=mode_cfg.generation.max_tokens,
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:

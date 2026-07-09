@@ -76,6 +76,9 @@ class OpenRouterClient:
         fallback_model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        top_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         json_mode: bool = True,
     ) -> LLMResponse:
         if not self.is_configured:
@@ -97,6 +100,9 @@ class OpenRouterClient:
                     model=current_model,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    top_p=top_p,
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
                     json_mode=json_mode,
                 )
             except Exception as exc:
@@ -119,6 +125,9 @@ class OpenRouterClient:
         model: str,
         temperature: float,
         max_tokens: int,
+        top_p: float | None,
+        frequency_penalty: float | None,
+        presence_penalty: float | None,
         json_mode: bool,
     ) -> LLMResponse:
         url = f"{self._settings.openrouter_base_url.rstrip('/')}/chat/completions"
@@ -137,6 +146,12 @@ class OpenRouterClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if frequency_penalty is not None:
+            payload["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            payload["presence_penalty"] = presence_penalty
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
@@ -264,8 +279,12 @@ class OpenRouterClient:
                 yield chunk
 
     def list_configured_models(self) -> list[str]:
-        return [
+        models = [
             item.strip()
             for item in self._ai_settings.available_models.split(",")
             if item.strip()
         ]
+        fallback = self._ai_settings.openrouter_fallback_model
+        if fallback and fallback not in models:
+            models.append(fallback)
+        return models

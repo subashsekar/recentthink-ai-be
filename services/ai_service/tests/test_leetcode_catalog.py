@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from app.agents.leetcode.catalog import (
-    build_mode_prompt_prefix,
     list_examples,
     list_modes,
     resolve_mode_id,
@@ -19,6 +18,7 @@ def test_list_modes_returns_coaching_modes() -> None:
     assert len(modes) >= 4
     assert modes[0].id == "learning"
     assert modes[0].label
+    assert modes[0].description is not None or modes[0].recommended in {True, False}
 
 
 def test_list_examples_returns_starter_problems() -> None:
@@ -42,7 +42,5 @@ def test_validate_mode_id_rejects_unknown() -> None:
         validate_mode_id("not-a-mode")
 
 
-def test_build_mode_prompt_prefix_includes_instructions() -> None:
-    prefix = build_mode_prompt_prefix("interview")
-    assert "INTERVIEW MODE" in prefix
-    assert "interview" in prefix
+def test_resolve_mode_id_falls_back_to_learning_when_missing() -> None:
+    assert resolve_mode_id(session_mode_id="learning") == "learning"

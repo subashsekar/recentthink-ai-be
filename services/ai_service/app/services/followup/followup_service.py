@@ -7,7 +7,8 @@ import time
 from typing import Any
 from uuid import UUID
 
-from app.agents.shared.coaching_modes import build_mode_prompt_prefix
+from app.coaching.registry import get_mode_registry
+from app.coaching.prompt_loader import get_mode_prompt_loader
 from app.agents.shared.followup.engine import FollowUpEngine, FollowUpIntent
 from app.agents.shared.teacher.module import TeacherModule
 from app.agents.shared.teacher.parser import parse_teacher_payload
@@ -81,10 +82,8 @@ class FollowUpService:
         prompt_module = self._followup.resolve_prompt_module(intent)
         system_prompt = self._prompts.load(feature="teacher", module_name=prompt_module)
         teacher_system = self._prompts.load(feature="teacher", module_name="system")
-        if session.feature == AIFeature.LEETCODE:
-            mode_prefix = build_mode_prompt_prefix(request.mode_id or session.mode_id)
-            if mode_prefix:
-                teacher_system = f"{mode_prefix}{teacher_system}"
+        mode_cfg = get_mode_registry().resolve(request.mode_id or session.mode_id)
+        mode_prompt = get_mode_prompt_loader().load(mode_cfg.followup_prompt or mode_cfg.metadata.id)
 
         instructions = self._followup.build_instructions(intent)
         problem_context = self._resolve_problem_context(session.context_metadata, memory_context)
@@ -101,13 +100,19 @@ class FollowUpService:
         response = None
         final_payload: dict[str, Any] = {}
         max_attempts = 2
+        # FollowUpRequest always has defaults, so treat the defaults as "unset" and apply mode defaults.
+        effective_temperature = request.temperature if request.temperature != 0.2 else mode_cfg.generation.temperature
+        effective_max_tokens = request.max_tokens if request.max_tokens != 2048 else mode_cfg.generation.max_tokens
         for attempt in range(max_attempts):
             response = await self._llm.chat_completion(
-                system_prompt=f"{teacher_system}\n\n{system_prompt}",
+                system_prompt="\n\n".join([part for part in (mode_prompt, teacher_system, system_prompt) if part]),
                 user_prompt=user_prompt,
                 model=resolved_model,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
+                temperature=effective_temperature,
+                max_tokens=effective_max_tokens,
+                top_p=mode_cfg.generation.top_p,
+                frequency_penalty=mode_cfg.generation.frequency_penalty,
+                presence_penalty=mode_cfg.generation.presence_penalty,
                 json_mode=True,
             )
             final_payload = parse_teacher_payload(

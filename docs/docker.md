@@ -1,23 +1,26 @@
 # Docker
 
 The whole stack — PostgreSQL plus all six microservices — is defined in
-`docker-compose.yml` and built from a **single reusable `Dockerfile`**.
+`docker-compose.yml`. Each service has its own `Dockerfile` under
+`services/<name>/Dockerfile` (build context is always the repo root).
 
-## Reusable image
+## Per-service images
 
-`Dockerfile` (repo root) builds any service via build args:
-
-| Build arg | Meaning |
-|----------------|--------------------------------|
-| `SERVICE_NAME` | Service folder under `services/` (e.g. `gateway`). |
-| `SERVICE_PORT` | Port the service listens on. |
+| Service | Dockerfile | Port |
+|---------|------------|------|
+| `gateway` | `services/gateway/Dockerfile` | 8000 |
+| `auth_service` | `services/auth_service/Dockerfile` | 8001 |
+| `user_service` | `services/user_service/Dockerfile` | 8002 |
+| `admin_service` | `services/admin_service/Dockerfile` | 8003 |
+| `ai_service` | `services/ai_service/Dockerfile` | 8004 |
+| `usage_service` | `services/usage_service/Dockerfile` | 8005 |
 
 Key characteristics:
 
 - Base `python:3.13-slim`; installs `libpq5` for `psycopg`.
 - Dependencies installed with `uv sync --frozen --no-dev --no-install-project`
   into `/opt/venv` (via `UV_PROJECT_ENVIRONMENT`).
-- Copies `shared/` and only the target `services/<name>/` into the image.
+- Copies `shared/` and the target `services/<name>/` tree into the image.
 - `shared` is importable through `PYTHONPATH=/app`; `app.main` resolves because
   the working directory is the service root.
 - A `HEALTHCHECK` polls `GET /` on the service port.
@@ -25,7 +28,7 @@ Key characteristics:
 Manual build example:
 
 ```bash
-docker build --build-arg SERVICE_NAME=gateway --build-arg SERVICE_PORT=8000 -t recentthink-gateway .
+docker build -f services/gateway/Dockerfile -t recentthink-gateway .
 ```
 
 ## Compose stack
@@ -42,8 +45,8 @@ What Compose configures:
 
 - **postgres** — `postgres:16-alpine` with a `pg_isready` healthcheck and a
   named volume (`recentthink-postgres-data`).
-- **Six services** — each built from the root Dockerfile with its
-  `SERVICE_NAME` / `SERVICE_PORT`, published on 8000–8005.
+- **Six services** — each built from `services/<name>/Dockerfile`, published on
+  8000–8005.
 - **`depends_on` + healthchecks** — every service waits for Postgres to be
   healthy; the gateway additionally waits for the other five services.
 - **Networking** — all containers join `recentthink-network` and reach the

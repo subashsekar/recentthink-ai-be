@@ -191,6 +191,9 @@ class LeetCodeModeResponse(BaseModel):
 
     id: str
     label: str
+    description: str | None = None
+    icon: str | None = None
+    recommended: bool = False
 
 
 class LeetCodeExampleResponse(BaseModel):

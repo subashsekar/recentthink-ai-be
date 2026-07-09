@@ -51,11 +51,11 @@ _PATTERN_KEYWORDS: dict[str, list[str]] = {
 class Planner:
     """Validates requests and prepares execution metadata deterministically."""
 
-    def plan(self, request: ChatRequest) -> PlannerOutput:
+    def plan(self, request: ChatRequest, *, mode_id: str | None = None) -> PlannerOutput:
         self._validate_request(request)
         feature = self._resolve_feature(request)
         modules = list(_FEATURE_MODULES[feature])
-        metadata = self._build_metadata(request, feature)
+        metadata = self._build_metadata(request, feature, mode_id=mode_id)
         return PlannerOutput(
             feature=feature,
             modules=modules,
@@ -85,31 +85,52 @@ class Planner:
             return "evaluation"
         return "general"
 
-    def _build_metadata(self, request: ChatRequest, feature: AIFeature) -> dict[str, Any]:
+    def _build_metadata(self, request: ChatRequest, feature: AIFeature, *, mode_id: str | None) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "classification": self.classify_message(request.message),
             "has_session": request.session_id is not None,
             "has_context": bool(request.context),
             "requested_model": request.model,
             "feature": feature.value,
+            "mode_id": mode_id,
         }
         if feature == AIFeature.LEETCODE and request.context:
-            metadata.update(self._build_leetcode_metadata(request.context))
+            metadata.update(self._build_leetcode_metadata(request.context, mode_id=mode_id))
         return metadata
 
     @classmethod
-    def _build_leetcode_metadata(cls, context: dict[str, Any]) -> dict[str, Any]:
+    def _build_leetcode_metadata(cls, context: dict[str, Any], *, mode_id: str | None) -> dict[str, Any]:
         topics = list(context.get("topics") or [])
         title = str(context.get("title") or "")
         description = str(context.get("description") or "")
         difficulty = str(context.get("difficulty") or "Unknown")
         patterns = topics or cls._detect_patterns(f"{title} {description}")
         category = topics[0] if topics else (patterns[0] if patterns else "General")
+        plan = list(_LEETCODE_EXECUTION_PLAN)
+        if mode_id == "quick":
+            plan = ["Identify the optimal pattern", "Write clean optimal code", "State complexity"]
+        elif mode_id == "interview":
+            plan = [
+                "Clarify inputs/outputs and constraints",
+                "Describe approach and trade-offs",
+                "Implement",
+                "Analyze complexity",
+                "Discuss edge cases and follow-ups",
+            ]
+        elif mode_id == "teacher":
+            plan = [
+                "Restate problem in your own words",
+                "Identify key concept/pattern",
+                "Plan and checkpoints",
+                "Walk through an example",
+                "Compare approaches",
+                "Complexity + practice exercises",
+            ]
         return {
             "problem_category": category,
             "difficulty": difficulty,
             "patterns": patterns,
-            "execution_plan": list(_LEETCODE_EXECUTION_PLAN),
+            "execution_plan": plan,
             "problem_slug": context.get("slug"),
             "problem_url": context.get("url"),
             "learning_objectives": cls._learning_objectives(patterns),

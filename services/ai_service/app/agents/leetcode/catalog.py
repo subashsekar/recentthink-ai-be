@@ -1,4 +1,8 @@
-"""LeetCode coaching mode catalog and prompt helpers."""
+"""LeetCode coaching mode catalog and prompt helpers.
+
+Note: modes are now first-class and loaded from the coaching mode registry.
+`leetcode_catalog.json` still owns example cards.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.agents.leetcode.schemas import LeetCodeExampleResponse, LeetCodeModeResponse
-from app.agents.shared.coaching_modes import DEFAULT_MODE_ID, build_mode_prompt_prefix, get_mode_instructions
+from app.coaching.registry import DEFAULT_MODE_ID, get_mode_registry
 from shared.exceptions.base import ValidationException
 
 _CATALOG_PATH = Path(__file__).resolve().parents[2] / "config" / "leetcode_catalog.json"
@@ -23,15 +27,21 @@ def _mode_entries() -> list[dict]:
 
 
 def allowed_mode_ids() -> list[str]:
-    return [str(item["id"]) for item in _mode_entries() if item.get("id")]
+    return [m.id for m in get_mode_registry().list_metadata()]
 
 
 def list_modes() -> list[LeetCodeModeResponse]:
     """Return coaching modes for the workspace header."""
+    modes = get_mode_registry().list_metadata()
     return [
-        LeetCodeModeResponse(id=str(item["id"]), label=str(item["label"]))
-        for item in _mode_entries()
-        if item.get("id") and item.get("label")
+        LeetCodeModeResponse(
+            id=item.id,
+            label=item.label,
+            description=item.description or None,
+            icon=item.icon or None,
+            recommended=bool(item.recommended),
+        )
+        for item in modes
     ]
 
 
@@ -70,8 +80,6 @@ def resolve_mode_id(
 __all__ = [
     "DEFAULT_MODE_ID",
     "allowed_mode_ids",
-    "build_mode_prompt_prefix",
-    "get_mode_instructions",
     "list_examples",
     "list_modes",
     "resolve_mode_id",

@@ -1,0 +1,137 @@
+{
+  "modes": [
+    {
+      "metadata": {
+        "id": "learning",
+        "label": "Learning Mode",
+        "description": "Step-by-step explanations with hints, examples, and common mistakes.",
+        "icon": "book",
+        "recommended": true
+      },
+      "generation": {
+        "temperature": 0.7,
+        "max_tokens": 7000,
+        "top_p": 0.95
+      },
+      "planner": {
+        "detail_level": "high",
+        "include_examples": true,
+        "focus_complexity": true,
+        "include_multiple_approaches": true
+      },
+      "teacher": {
+        "style": "beginner_friendly",
+        "show_hints": true,
+        "reveal_answer": true,
+        "ask_questions": false,
+        "include_similar_problems": true
+      },
+      "evaluator": {
+        "strictness": "low",
+        "verbosity": "high"
+      },
+      "analyze_prompt": "learning",
+      "followup_prompt": "learning"
+    },
+    {
+      "metadata": {
+        "id": "teacher",
+        "label": "Teacher Mode",
+        "description": "Lesson-oriented explanations with checkpoints and concept reinforcement.",
+        "icon": "chalkboard",
+        "recommended": true
+      },
+      "generation": {
+        "temperature": 0.55,
+        "max_tokens": 6500,
+        "top_p": 0.9
+      },
+      "planner": {
+        "detail_level": "high",
+        "include_examples": true,
+        "focus_complexity": true,
+        "include_multiple_approaches": true
+      },
+      "teacher": {
+        "style": "instructor",
+        "show_hints": true,
+        "reveal_answer": true,
+        "ask_questions": true,
+        "include_similar_problems": true
+      },
+      "evaluator": {
+        "strictness": "medium",
+        "verbosity": "high"
+      },
+      "analyze_prompt": "teacher",
+      "followup_prompt": "teacher"
+    },
+    {
+      "metadata": {
+        "id": "interview",
+        "label": "Interview Mode",
+        "description": "Simulated interview: concise guidance, gradual hints, and strict evaluation.",
+        "icon": "briefcase",
+        "recommended": false
+      },
+      "generation": {
+        "temperature": 0.3,
+        "max_tokens": 4500,
+        "top_p": 0.85
+      },
+      "planner": {
+        "detail_level": "medium",
+        "include_examples": false,
+        "focus_complexity": true,
+        "include_multiple_approaches": false
+      },
+      "teacher": {
+        "style": "interviewer",
+        "show_hints": true,
+        "reveal_answer": false,
+        "ask_questions": true,
+        "include_similar_problems": false
+      },
+      "evaluator": {
+        "strictness": "high",
+        "verbosity": "medium"
+      },
+      "analyze_prompt": "interview",
+      "followup_prompt": "interview"
+    },
+    {
+      "metadata": {
+        "id": "quick",
+        "label": "Quick Solve",
+        "description": "Fast, concise solution-first output with minimal commentary.",
+        "icon": "bolt",
+        "recommended": false
+      },
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 3000,
+        "top_p": 0.8
+      },
+      "planner": {
+        "detail_level": "low",
+        "include_examples": false,
+        "focus_complexity": true,
+        "include_multiple_approaches": false
+      },
+      "teacher": {
+        "style": "concise",
+        "show_hints": false,
+        "reveal_answer": true,
+        "ask_questions": false,
+        "include_similar_problems": false
+      },
+      "evaluator": {
+        "strictness": "medium",
+        "verbosity": "low"
+      },
+      "analyze_prompt": "quick",
+      "followup_prompt": "quick"
+    }
+  ]
+}
+

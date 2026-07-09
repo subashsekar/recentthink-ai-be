@@ -30,7 +30,7 @@ workloads in later phases.
 
 ```
 recentthink/
-├── services/                 # One folder per microservice
+├── services/                 # One folder per microservice (each may include Dockerfile)
 │   ├── gateway/              # API gateway               (:8000)
 │   ├── auth_service/         # Auth + User/Admin models  (:8001)
 │   ├── user_service/         # End-user domain           (:8002)
@@ -56,7 +56,6 @@ recentthink/
 ├── docs/                     # Architecture & workflow documentation
 ├── tests/                    # Root + CRUD integration tests
 ├── .github/workflows/        # CI pipeline
-├── Dockerfile                # Single reusable image for every service
 ├── docker-compose.yml        # Postgres + all six services
 ├── alembic.ini
 ├── pyproject.toml            # Deps + tool config (Ruff/Black/isort/mypy/pytest)

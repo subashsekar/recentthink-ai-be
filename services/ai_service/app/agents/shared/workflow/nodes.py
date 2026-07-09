@@ -7,7 +7,8 @@ import time
 from typing import Any
 from uuid import UUID
 
-from app.agents.shared.coaching_modes import build_mode_prompt_prefix
+from app.coaching.registry import get_mode_registry
+from app.coaching.prompt_loader import get_mode_prompt_loader
 from app.agents.shared.coder.module import CoderModule
 from app.agents.shared.evaluator.module import EvaluatorModule
 from app.agents.shared.llm_response_normalizer import (
@@ -99,7 +100,7 @@ class WorkflowNodes:
                 temperature=state.get("temperature", 0.2),
                 max_tokens=state.get("max_tokens", 4096),
             )
-            planner_output = self._planner.plan(request)
+            planner_output = self._planner.plan(request, mode_id=state.get("mode_id"))
             session = self._resolve_session(
                 user_id=UUID(state["user_id"]),
                 request=request,
@@ -144,13 +145,11 @@ class WorkflowNodes:
         start = time.perf_counter()
         trace_entry = self._begin_trace(state, ModuleName.OPENROUTER)
         planner = PlannerOutput.model_validate(state.get("planner_output") or {})
-        system_prompt = self._prompts.load(
-            feature=planner.feature.value,
-            module_name="single_llm",
-        )
-        mode_prefix = build_mode_prompt_prefix(state.get("mode_id"))
-        if mode_prefix:
-            system_prompt = f"{mode_prefix}{system_prompt}"
+        mode_registry = get_mode_registry()
+        mode_cfg = mode_registry.resolve(state.get("mode_id"))
+        mode_prompt = get_mode_prompt_loader().load(mode_cfg.analyze_prompt or mode_cfg.metadata.id)
+        schema_prompt = self._prompts.load(feature=planner.feature.value, module_name="single_llm")
+        system_prompt = "\n\n".join([part for part in (mode_prompt, schema_prompt) if part])
         user_prompt = self._build_user_prompt(state, planner)
         llm_calls = 0
         max_json_retries = self._ai_settings.json_validation_max_retries
@@ -165,8 +164,11 @@ class WorkflowNodes:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     model=state.get("model"),
-                    temperature=state.get("temperature", 0.2),
-                    max_tokens=state.get("max_tokens", 4096),
+                    temperature=float(state.get("temperature", mode_cfg.generation.temperature)),
+                    max_tokens=int(state.get("max_tokens", mode_cfg.generation.max_tokens)),
+                    top_p=mode_cfg.generation.top_p,
+                    frequency_penalty=mode_cfg.generation.frequency_penalty,
+                    presence_penalty=mode_cfg.generation.presence_penalty,
                 )
                 validation = self._validator.validate(response.content, UnifiedLLMResponse)
                 if not validation.success or validation.data is None:

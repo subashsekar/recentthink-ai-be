@@ -43,14 +43,16 @@ class HistoryManager:
 
     @staticmethod
     def _to_summary(session: AISession) -> SessionSummaryResponse:
+        model_id = session.model_id if isinstance(session.model_id, str) else None
+        mode_id = session.mode_id if isinstance(session.mode_id, str) else None
         return SessionSummaryResponse(
             id=session.id,
             feature=session.feature,
             title=session.title,
             status=session.status,
             summary=session.summary,
-            model_id=session.model_id,
-            mode_id=session.mode_id,
+            model_id=model_id,
+            mode_id=mode_id,
             created_at=session.created_at,
             updated_at=session.updated_at,
         )

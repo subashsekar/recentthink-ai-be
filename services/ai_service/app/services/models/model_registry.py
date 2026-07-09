@@ -96,6 +96,10 @@ class ModelRegistry:
 
     def validate_model_id(self, model_id: str) -> None:
         """Reject unknown or disabled model IDs with HTTP 400."""
+        if not isinstance(model_id, str):
+            raise ValidationException(
+                f"Unknown model_id '{model_id}'. Use GET /ai/models for valid ids.",
+            )
         if model_id not in self.configured_model_ids():
             raise ValidationException(
                 f"Unknown model_id '{model_id}'. Use GET /ai/models for valid ids.",
@@ -114,6 +118,8 @@ class ModelRegistry:
         if requested is not None:
             self.validate_model_id(requested)
             return requested
+        if not isinstance(session_model_id, str) or not session_model_id:
+            session_model_id = None
         if session_model_id is not None:
             self.validate_model_id(session_model_id)
             return session_model_id
