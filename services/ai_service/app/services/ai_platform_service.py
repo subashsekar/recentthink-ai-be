@@ -17,7 +17,6 @@ from app.schemas.ai import (
     FollowUpRequest,
     FollowUpResponse,
     HistoryListResponse,
-    ModelInfo,
     ModelsResponse,
     SessionDetailResponse,
     SummarizeResponse,
@@ -25,6 +24,7 @@ from app.schemas.ai import (
 from app.services.followup.followup_service import FollowUpService
 from app.services.history.history_manager import HistoryManager
 from app.services.memory.conversation_memory import ConversationMemoryService
+from app.services.models.model_registry import ModelRegistry, get_model_registry
 from shared.exceptions.auth import ForbiddenError
 from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
@@ -45,6 +45,7 @@ class AIPlatformService:
         memory_service: ConversationMemoryService | None = None,
         summarizer: ConversationSummarizer | None = None,
         llm_client: OpenRouterClient | None = None,
+        model_registry: ModelRegistry | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._history = history_manager
@@ -53,14 +54,26 @@ class AIPlatformService:
         self._memory = memory_service
         self._summarizer = summarizer or ConversationSummarizer()
         self._llm = llm_client or OpenRouterClient()
+        self._models = model_registry or get_model_registry()
+
+    @property
+    def model_registry(self) -> ModelRegistry:
+        return self._models
 
     async def chat(self, user: AuthenticatedUser, request: ChatRequest) -> ChatResponse:
+        session = None
         if request.session_id is not None:
             session = self._sessions.get_by_id(request.session_id)
             if session is None:
                 raise RecordNotFoundError(f"Session '{request.session_id}' not found.")
             if not can_access_session(user, session.user_id):
                 raise ForbiddenError("You do not have access to this session.")
+
+        resolved_model = self._models.resolve_model_id(
+            requested=request.model,
+            session_model_id=session.model_id if session is not None else None,
+        )
+        request = request.model_copy(update={"model": resolved_model})
         return await self._orchestrator.execute(user_id=user.user_id, request=request)
 
     def list_history(
@@ -101,6 +114,20 @@ class AIPlatformService:
     async def follow_up(self, user: AuthenticatedUser, request: FollowUpRequest) -> FollowUpResponse:
         if self._followup is None:
             raise RuntimeError("Follow-up service is not configured.")
+        session = self._sessions.get_by_id(request.session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{request.session_id}' not found.")
+        if not can_access_session(user, session.user_id):
+            raise ForbiddenError("You do not have access to this session.")
+
+        resolved_model = self._models.resolve_model_id(
+            requested=request.model,
+            session_model_id=session.model_id,
+        )
+        resolved_mode = request.mode_id or session.mode_id
+        request = request.model_copy(
+            update={"model": resolved_model, "mode_id": resolved_mode},
+        )
         return await self._followup.handle_follow_up(user, request)
 
     async def summarize_session(
@@ -164,13 +191,4 @@ class AIPlatformService:
         self._memory.delete(session_id)
 
     def list_models(self) -> ModelsResponse:
-        default_model = self._llm._settings.openrouter_model  # noqa: SLF001
-        models = [
-            ModelInfo(
-                id=model_id,
-                provider=OpenRouterClient.parse_provider(model_id),
-                is_default=model_id == default_model,
-            )
-            for model_id in self._llm.list_configured_models()
-        ]
-        return ModelsResponse(models=models, default_model=default_model)
+        return self._models.list_models()

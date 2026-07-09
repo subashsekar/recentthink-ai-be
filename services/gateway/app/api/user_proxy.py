@@ -12,7 +12,7 @@ router = APIRouter(tags=["user-proxy"])
 
 @router.api_route(
     "/users/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
 )
 async def users_catchall(request: Request, path: str):
     return await proxy_to_upstream(

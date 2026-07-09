@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     context: dict[str, Any] | None = None
     model: str | None = Field(default=None, max_length=255)
+    mode_id: str | None = Field(default=None, max_length=50)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=1, le=128000)
 
@@ -83,6 +84,8 @@ class SessionSummaryResponse(BaseModel):
     title: str | None
     status: SessionStatus
     summary: str | None
+    model_id: str | None = None
+    mode_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -118,6 +121,7 @@ class FollowUpRequest(BaseModel):
     session_id: UUID
     question: str = Field(..., min_length=1, max_length=8000)
     model: str | None = Field(default=None, max_length=255)
+    mode_id: str | None = Field(default=None, max_length=50)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=1, le=32000)
 
@@ -163,12 +167,21 @@ class HistoryListResponse(BaseModel):
 
 
 class ModelInfo(BaseModel):
-    """Available LLM model metadata."""
+    """Available LLM model metadata for the frontend model selector."""
 
     id: str
+    name: str
     provider: str
     description: str | None = None
-    is_default: bool = False
+    recommended: bool = False
+    default: bool = False
+    enabled: bool = True
+    tier: str | None = None
+    context_window: int | None = None
+    supports_vision: bool = False
+    supports_streaming: bool = True
+    cost_per_1k_input: float | None = None
+    cost_per_1k_output: float | None = None
 
 
 class ModelsResponse(BaseModel):

@@ -84,8 +84,18 @@ def mock_ai_service() -> MagicMock:
     )
     service.delete_session.return_value = None
     service.list_models.return_value = ModelsResponse(
-        models=[ModelInfo(id="openai/gpt-4o-mini", provider="openai", is_default=True)],
-        default_model="openai/gpt-4o-mini",
+        models=[
+            ModelInfo(
+                id="google/gemini-2.5-flash",
+                name="Gemini 2.5 Flash",
+                provider="Google",
+                description="Fast",
+                recommended=True,
+                default=True,
+                enabled=True,
+            ),
+        ],
+        default_model="google/gemini-2.5-flash",
     )
     return service
 
@@ -147,4 +157,5 @@ def test_list_models(client: TestClient) -> None:
         headers={"Authorization": "Bearer test-token"},
     )
     assert response.status_code == 200
-    assert response.json()["default_model"] == "openai/gpt-4o-mini"
+    assert response.json()["default_model"] == "google/gemini-2.5-flash"
+    assert response.json()["models"][0]["name"] == "Gemini 2.5 Flash"

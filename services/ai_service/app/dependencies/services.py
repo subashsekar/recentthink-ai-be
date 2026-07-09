@@ -12,6 +12,7 @@ from app.repositories.conversation_memory_repository import ConversationMemoryRe
 from app.repositories.model_usage_repository import ModelUsageRepository
 from app.repositories.prompt_version_repository import PromptVersionRepository
 from app.services.ai_platform_service import AIPlatformService
+from app.services.models.model_registry import ModelRegistry, get_model_registry
 from app.services.execution_trace import ExecutionTraceService
 from app.services.followup.followup_service import FollowUpService
 from app.services.history.history_manager import HistoryManager
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 
-__all__ = ["get_ai_platform_service"]
+__all__ = ["get_ai_platform_service", "get_model_registry"]
 
 
 def get_ai_platform_service(db: Session = Depends(get_db)) -> AIPlatformService:
@@ -70,4 +71,5 @@ def get_ai_platform_service(db: Session = Depends(get_db)) -> AIPlatformService:
         followup_service=followup_service,
         memory_service=memory_service,
         llm_client=llm_client,
+        model_registry=get_model_registry(),
     )

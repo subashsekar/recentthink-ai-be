@@ -38,13 +38,21 @@ def service() -> AIPlatformService:
     history = MagicMock()
     session_repo = MagicMock()
     llm = MagicMock()
-    llm._settings.openrouter_model = "openai/gpt-4o-mini"
-    llm.list_configured_models.return_value = ["openai/gpt-4o-mini"]
+    llm._settings.openrouter_model = "google/gemini-2.5-flash"
+    from app.services.models.model_registry import ModelRegistry
+
+    registry = ModelRegistry(
+        settings=llm._settings,
+        ai_settings=MagicMock(
+            available_models="google/gemini-2.5-flash,openai/gpt-4o",
+        ),
+    )
     return AIPlatformService(
         orchestrator=orchestrator,
         history_manager=history,
         session_repo=session_repo,
         llm_client=llm,
+        model_registry=registry,
     )
 
 
@@ -79,5 +87,6 @@ async def test_chat_missing_session(user: AuthenticatedUser, service: AIPlatform
 
 def test_list_models(service: AIPlatformService) -> None:
     result = service.list_models()
-    assert result.default_model == "openai/gpt-4o-mini"
-    assert len(result.models) == 1
+    assert result.default_model == "google/gemini-2.5-flash"
+    assert len(result.models) == 2
+    assert result.models[0].default is True

@@ -66,6 +66,7 @@ class AIWorkflowState(TypedDict, total=False):
     title: str | None
     context: dict[str, Any] | None
     model: str | None
+    mode_id: str | None
     temperature: float
     max_tokens: int
     memory_context: dict[str, Any]

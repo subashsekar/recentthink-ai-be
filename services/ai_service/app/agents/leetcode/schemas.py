@@ -23,6 +23,24 @@ class AnalyzeRequest(BaseModel):
         description="Manual problem statement when URL fetch fails.",
     )
     title: str | None = Field(default=None, min_length=1, max_length=500)
+    model_id: str | None = Field(default=None, max_length=255)
+    mode_id: str | None = Field(default=None, max_length=50)
+
+    @field_validator("model_id")
+    @classmethod
+    def strip_model_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("mode_id")
+    @classmethod
+    def strip_mode_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
     @model_validator(mode="after")
     def require_url_or_statement(self) -> AnalyzeRequest:
@@ -108,6 +126,7 @@ class AnalyzeResponse(BaseModel):
 
     session_id: UUID
     status: SessionStatus
+    mode_id: str | None = None
     problem: ProblemData
     planner: PlannerOutput
     teacher: str
@@ -141,8 +160,48 @@ class SessionSummaryResponse(BaseModel):
     difficulty: str | None
     category: str | None
     status: SessionStatus
+    model_id: str | None = None
+    mode_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class LeetCodeHistoryItemResponse(BaseModel):
+    """Frontend-compatible session summary for the sidebar."""
+
+    session_id: UUID
+    title: str
+    model_id: str | None = None
+    mode_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LeetCodeHistoryListResponse(BaseModel):
+    """Paginated history list matching the frontend ApiPaginatedResponse shape."""
+
+    items: list[LeetCodeHistoryItemResponse]
+    page: int
+    page_size: int
+    total: int
+
+
+class LeetCodeModeResponse(BaseModel):
+    """Coaching mode for the LeetCode workspace header."""
+
+    id: str
+    label: str
+
+
+class LeetCodeExampleResponse(BaseModel):
+    """Starter problem card for the LeetCode hero section."""
+
+    id: str
+    title: str
+    difficulty: str
+    pattern: str
+    url: str
+    icon: str | None = None
 
 
 class SessionDetailResponse(BaseModel):
@@ -157,10 +216,48 @@ class SessionDetailResponse(BaseModel):
     difficulty: str | None
     category: str | None
     status: SessionStatus
+    model_id: str | None = None
+    mode_id: str | None = None
     problem_description: str | None
     messages: list[ChatMessageResponse]
     created_at: datetime
     updated_at: datetime
+
+
+class UpdateSessionRequest(BaseModel):
+    """Partial update for a LeetCode session (e.g. selected model or mode)."""
+
+    model_id: str | None = Field(default=None, min_length=1, max_length=255)
+    mode_id: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @field_validator("model_id")
+    @classmethod
+    def strip_model_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            msg = "model_id must not be empty."
+            raise ValueError(msg)
+        return stripped
+
+    @field_validator("mode_id")
+    @classmethod
+    def strip_mode_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            msg = "mode_id must not be empty."
+            raise ValueError(msg)
+        return stripped
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> UpdateSessionRequest:
+        if self.model_id is None and self.mode_id is None:
+            msg = "At least one field must be provided (model_id or mode_id)."
+            raise ValueError(msg)
+        return self
 
 
 class ProgressResponse(BaseModel):
@@ -193,6 +290,7 @@ class FollowUpRequest(BaseModel):
     session_id: UUID
     question: str = Field(..., min_length=1, max_length=8000)
     model: str | None = Field(default=None, max_length=255)
+    mode_id: str | None = Field(default=None, max_length=50)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_tokens: int = Field(default=2048, ge=1, le=32000)
 
@@ -200,6 +298,14 @@ class FollowUpRequest(BaseModel):
     @classmethod
     def strip_question(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("mode_id")
+    @classmethod
+    def strip_mode_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class FollowUpResponse(BaseModel):

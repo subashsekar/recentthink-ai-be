@@ -66,13 +66,17 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestIdMiddleware)
+# Always read fresh settings for CORS (``.env`` is outside the uvicorn reload watch path).
+get_settings.cache_clear()
 _cfg = get_settings()
+logger.info("cors_origins=%s", _cfg.cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cfg.cors_origins,
     allow_credentials=_cfg.cors_allow_credentials,
     allow_methods=_cfg.cors_allow_methods,
-    allow_headers=_cfg.cors_allow_headers,
+    # Allow any request header on preflight so browsers adding extra headers don't 400.
+    allow_headers=["*"] if _cfg.is_local else _cfg.cors_allow_headers,
     expose_headers=["X-Request-ID"],
 )
 app.include_router(health_router)

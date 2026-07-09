@@ -7,11 +7,13 @@ import time
 from typing import Any
 from uuid import UUID
 
+from app.agents.shared.coaching_modes import build_mode_prompt_prefix
 from app.agents.shared.followup.engine import FollowUpEngine, FollowUpIntent
 from app.agents.shared.teacher.module import TeacherModule
+from app.agents.shared.teacher.parser import parse_teacher_payload
 from app.clients.openrouter import OpenRouterClient
 from app.dependencies.auth import AuthenticatedUser, can_access_session
-from app.models.enums import MessageRole, ModuleName
+from app.models.enums import AIFeature, MessageRole, ModuleName
 from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
 from app.schemas.ai import FollowUpRequest, FollowUpResponse, ModuleResponse
@@ -65,6 +67,9 @@ class FollowUpService:
         question = sanitize_user_input(request.question)
         intent = self._followup.classify(question)
         memory_context = self._memory.build_prompt_context(request.session_id)
+        planner_metadata = memory_context.get("planner_output")
+        if not isinstance(planner_metadata, dict):
+            planner_metadata = None
 
         self._messages.create_message(
             session_id=request.session_id,
@@ -76,27 +81,59 @@ class FollowUpService:
         prompt_module = self._followup.resolve_prompt_module(intent)
         system_prompt = self._prompts.load(feature="teacher", module_name=prompt_module)
         teacher_system = self._prompts.load(feature="teacher", module_name="system")
+        if session.feature == AIFeature.LEETCODE:
+            mode_prefix = build_mode_prompt_prefix(request.mode_id or session.mode_id)
+            if mode_prefix:
+                teacher_system = f"{mode_prefix}{teacher_system}"
+
         instructions = self._followup.build_instructions(intent)
+        problem_context = self._resolve_problem_context(session.context_metadata, memory_context)
 
         user_prompt = self._build_followup_prompt(
             question=question,
             intent=intent,
             instructions=instructions,
             memory_context=memory_context,
+            problem_context=problem_context,
         )
 
-        response = await self._llm.chat_completion(
-            system_prompt=f"{teacher_system}\n\n{system_prompt}",
-            user_prompt=user_prompt,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-        )
+        resolved_model = request.model or session.model_id
+        response = None
+        final_payload: dict[str, Any] = {}
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            response = await self._llm.chat_completion(
+                system_prompt=f"{teacher_system}\n\n{system_prompt}",
+                user_prompt=user_prompt,
+                model=resolved_model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                json_mode=True,
+            )
+            final_payload = parse_teacher_payload(
+                response.content,
+                planner_metadata=planner_metadata,
+            )
+            preview = self._teacher.process(
+                session_id=request.session_id,
+                payload=final_payload,
+                message_repo=None,
+            )
+            if (
+                preview.content.strip()
+                and preview.content != "No teacher output available."
+                and len(preview.content) >= 40
+            ):
+                break
+            logger.warning(
+                "followup_empty_response_retry",
+                extra={"session_id": str(request.session_id), "attempt": attempt + 1},
+            )
 
-        teacher_payload = self._parse_teacher_response(response.content)
-        teacher_result: ModuleResponse = self._teacher.process(
+        assert response is not None
+        teacher_result = self._teacher.process(
             session_id=request.session_id,
-            payload=teacher_payload,
+            payload=final_payload,
             message_repo=self._messages,
         )
 
@@ -147,17 +184,48 @@ class FollowUpService:
         )
 
     @staticmethod
+    def _resolve_problem_context(
+        session_context: dict[str, Any] | None,
+        memory_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        if isinstance(session_context, dict) and session_context.get("title"):
+            return session_context
+        nested = memory_context.get("context")
+        if isinstance(nested, dict):
+            problem = nested.get("problem")
+            if isinstance(problem, dict) and problem.get("title"):
+                return problem
+            if nested.get("title"):
+                return nested
+        return session_context or {}
+
+    @staticmethod
     def _build_followup_prompt(
         *,
         question: str,
         intent: FollowUpIntent,
         instructions: str,
         memory_context: dict[str, Any],
+        problem_context: dict[str, Any] | None = None,
     ) -> str:
         sections = [
             f"Follow-up intent: {intent.value}",
             f"Instructions: {instructions}",
         ]
+        problem = problem_context or {}
+        if problem:
+            problem_lines = [
+                f"Title: {problem.get('title', 'Unknown')}",
+                f"Difficulty: {problem.get('difficulty', 'Unknown')}",
+            ]
+            if problem.get("description"):
+                description = str(problem["description"])
+                problem_lines.append(f"Description:\n{description[:4000]}")
+            if problem.get("constraints"):
+                problem_lines.append(
+                    "Constraints:\n" + "\n".join(f"- {item}" for item in problem["constraints"]),
+                )
+            sections.append("Problem context:\n" + "\n".join(problem_lines))
         if memory_context.get("summary"):
             sections.append(f"Conversation summary:\n{memory_context['summary']}")
         if memory_context.get("planner_output"):
@@ -168,24 +236,10 @@ class FollowUpService:
             sections.append(f"Recent messages:\n{json.dumps(memory_context['recent_messages'], indent=2)}")
         sections.append(f"User follow-up question:\n{question}")
         sections.append(
-            'Respond with a JSON object containing teacher fields: '
-            '"problem_summary", "thinking_process", "concepts", "approach", '
-            '"common_mistakes", "analogy", "next_step". Do not reveal the full solution.',
+            "Respond with a JSON object containing teacher fields: "
+            '"problem_summary", "thinking_process", "learning_objectives", "concepts", '
+            '"approach", "common_mistakes", "analogy", "next_step", "explanation", "hints". '
+            "The explanation field must directly answer the follow-up question.",
         )
         return "\n\n".join(sections)
 
-    @staticmethod
-    def _parse_teacher_response(content: str) -> dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        try:
-            parsed = json.loads(text)
-            if isinstance(parsed, dict) and "teacher" in parsed:
-                return parsed["teacher"]
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-        return {"explanation": content}

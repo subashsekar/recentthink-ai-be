@@ -32,6 +32,7 @@ def _session(owner_id: UUID) -> MagicMock:
     session.title = "Session"
     session.status = SessionStatus.COMPLETED
     session.summary = None
+    session.model_id = None
     session.created_at = datetime.now(UTC)
     session.updated_at = datetime.now(UTC)
     return session

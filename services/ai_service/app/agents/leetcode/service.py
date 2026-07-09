@@ -12,29 +12,39 @@ from app.agents.leetcode.adapter import (
     build_problem_context,
     to_analyze_response,
     to_follow_up_response,
+    to_history_item,
     to_session_detail,
     to_session_summary,
 )
+from app.agents.leetcode.catalog import list_examples as catalog_examples
+from app.agents.leetcode.catalog import list_modes as catalog_modes
+from app.agents.leetcode.catalog import resolve_mode_id
 from app.agents.leetcode.problem_fetcher import LeetCodeProblemFetcher
 from app.agents.leetcode.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     FollowUpRequest,
     FollowUpResponse,
+    LeetCodeAgentInfoResponse,
+    LeetCodeExampleResponse,
+    LeetCodeHistoryListResponse,
+    LeetCodeModeResponse,
     ManualInputRequiredResponse,
     ProblemData,
     ProgressResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
-    LeetCodeAgentInfoResponse,
+    UpdateSessionRequest,
 )
-from app.dependencies.auth import AuthenticatedUser
+from app.dependencies.auth import AuthenticatedUser, can_access_session
 from app.models.enums import AIFeature, SessionStatus
 from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.leetcode_progress_repository import LeetCodeProgressRepository
 from app.schemas.ai import ChatRequest, FollowUpRequest as PlatformFollowUpRequest
 from app.services.ai_platform_service import AIPlatformService
 from app.utils.sse import format_sse_event
+from shared.exceptions.auth import ForbiddenError
+from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -82,7 +92,7 @@ class LeetCodeService:
         if manual_required:
             return self._manual_required_response(user, request)
         assert problem is not None
-        return await self._run_analysis(user, problem)
+        return await self._run_analysis(user, problem, request)
 
     async def analyze_stream(
         self,
@@ -105,7 +115,7 @@ class LeetCodeService:
                 "problem_statement_markdown": problem.problem_statement_markdown or "",
             },
         )
-        response = await self._run_analysis(user, problem)
+        response = await self._run_analysis(user, problem, request)
         yield format_sse_event(
             {"type": "complete", **response.model_dump(mode="json")},
         )
@@ -115,6 +125,13 @@ class LeetCodeService:
         user: AuthenticatedUser,
         request: AnalyzeRequest,
     ) -> ManualInputRequiredResponse:
+        model_id = None
+        mode_id = None
+        if request.model_id is not None:
+            self._platform.model_registry.validate_model_id(request.model_id)
+            model_id = request.model_id
+        if request.mode_id is not None:
+            mode_id = resolve_mode_id(requested=request.mode_id)
         session = self._sessions.create_session(
             user_id=user.user_id,
             feature=AIFeature.LEETCODE,
@@ -124,6 +141,13 @@ class LeetCodeService:
                 "problem_url": str(request.problem_url) if request.problem_url else None,
             },
         )
+        updates: dict[str, object] = {}
+        if model_id is not None:
+            updates["model_id"] = model_id
+        if mode_id is not None:
+            updates["mode_id"] = mode_id
+        if updates:
+            self._sessions.update_session(session.id, **updates)
         return ManualInputRequiredResponse(
             session_id=session.id,
             status=SessionStatus.MANUAL_REQUIRED,
@@ -138,9 +162,15 @@ class LeetCodeService:
         self,
         user: AuthenticatedUser,
         problem: ProblemData,
+        request: AnalyzeRequest,
     ) -> AnalyzeResponse:
         start = time.perf_counter()
         try:
+            resolved_model = self._platform.model_registry.resolve_model_id(
+                requested=request.model_id,
+                session_model_id=None,
+            )
+            resolved_mode = resolve_mode_id(requested=request.mode_id)
             chat_response = await self._platform.chat(
                 user,
                 ChatRequest(
@@ -148,6 +178,8 @@ class LeetCodeService:
                     message=build_chat_message(problem),
                     title=problem.title,
                     context=build_problem_context(problem),
+                    model=resolved_model,
+                    mode_id=resolved_mode,
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:
@@ -163,6 +195,8 @@ class LeetCodeService:
                 status=SessionStatus.COMPLETED,
                 title=problem.title,
                 context_metadata=build_problem_context(problem),
+                model_id=resolved_model,
+                mode_id=resolved_mode,
             )
             self._progress.record_attempt(
                 user.user_id,
@@ -172,7 +206,7 @@ class LeetCodeService:
             )
 
             elapsed = int((time.perf_counter() - start) * 1000)
-            response = to_analyze_response(chat_response, problem)
+            response = to_analyze_response(chat_response, problem, mode_id=resolved_mode)
             return response.model_copy(update={"total_execution_time_ms": elapsed})
         except Exception as exc:
             logger.error("LeetCode analysis failed: %s", exc)
@@ -184,17 +218,60 @@ class LeetCodeService:
         request: FollowUpRequest,
     ) -> FollowUpResponse:
         """Handle a follow-up question in an existing LeetCode session."""
+        session = self._sessions.get_by_id(request.session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{request.session_id}' not found.")
+        if not can_access_session(user, session.user_id):
+            raise ForbiddenError("You do not have access to this session.")
+
+        resolved_model = self._platform.model_registry.resolve_model_id(
+            requested=request.model,
+            session_model_id=session.model_id,
+        )
+        resolved_mode = resolve_mode_id(
+            requested=request.mode_id,
+            session_mode_id=session.mode_id,
+        )
+        if request.mode_id is not None and resolved_mode != session.mode_id:
+            self._sessions.update_session(session.id, mode_id=resolved_mode)
+
         response = await self._platform.follow_up(
             user,
             PlatformFollowUpRequest(
                 session_id=request.session_id,
                 question=request.question,
-                model=request.model,
+                model=resolved_model,
+                mode_id=resolved_mode,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             ),
         )
         return to_follow_up_response(response)
+
+    def update_session(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+        request: UpdateSessionRequest,
+    ) -> SessionSummaryResponse:
+        """Update mutable fields on a LeetCode session (e.g. selected model)."""
+        session = self._sessions.get_by_id(session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        if session.feature != AIFeature.LEETCODE:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        if not can_access_session(user, session.user_id):
+            raise ForbiddenError("You do not have access to this session.")
+
+        updates: dict[str, object] = {}
+        if request.model_id is not None:
+            self._platform.model_registry.validate_model_id(request.model_id)
+            updates["model_id"] = request.model_id
+        if request.mode_id is not None:
+            updates["mode_id"] = resolve_mode_id(requested=request.mode_id)
+
+        updated = self._sessions.update_session(session_id, **updates)
+        return to_session_summary(updated)
 
     async def _resolve_problem(
         self,
@@ -234,7 +311,7 @@ class LeetCodeService:
         limit: int = 50,
         offset: int = 0,
         search: str | None = None,
-    ) -> list[SessionSummaryResponse]:
+    ) -> LeetCodeHistoryListResponse:
         if user.role in {"ADMIN", "SUPER_ADMIN"}:
             sessions = self._sessions.list_all(
                 feature=AIFeature.LEETCODE,
@@ -242,6 +319,7 @@ class LeetCodeService:
                 limit=limit,
                 offset=offset,
             )
+            total = len(sessions)
         else:
             sessions = self._sessions.list_by_user(
                 user.user_id,
@@ -250,7 +328,21 @@ class LeetCodeService:
                 limit=limit,
                 offset=offset,
             )
-        return [to_session_summary(session) for session in sessions]
+            total = self._sessions.count_by_user(user.user_id, feature=AIFeature.LEETCODE)
+
+        page = (offset // limit) + 1 if limit > 0 else 1
+        return LeetCodeHistoryListResponse(
+            items=[to_history_item(session) for session in sessions],
+            page=page,
+            page_size=limit,
+            total=total,
+        )
+
+    def list_modes(self) -> list[LeetCodeModeResponse]:
+        return catalog_modes()
+
+    def list_examples(self) -> list[LeetCodeExampleResponse]:
+        return catalog_examples()
 
     def get_session_detail(
         self,

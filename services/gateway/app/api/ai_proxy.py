@@ -48,6 +48,15 @@ async def leetcode_history_session(request: Request, session_id: str):
     )
 
 
+@router.patch("/leetcode/history/{session_id}")
+async def leetcode_update_session(request: Request, session_id: str):
+    return await proxy_to_upstream(
+        request,
+        upstream_client=request.app.state.ai_client,
+        upstream_path=f"/leetcode/history/{session_id}",
+    )
+
+
 @router.delete("/leetcode/history/{session_id}")
 async def leetcode_delete_session(request: Request, session_id: str):
     return await proxy_to_upstream(
@@ -63,6 +72,24 @@ async def leetcode_progress(request: Request):
         request,
         upstream_client=request.app.state.ai_client,
         upstream_path="/leetcode/progress",
+    )
+
+
+@router.get("/leetcode/modes")
+async def leetcode_modes(request: Request):
+    return await proxy_to_upstream(
+        request,
+        upstream_client=request.app.state.ai_client,
+        upstream_path="/leetcode/modes",
+    )
+
+
+@router.get("/leetcode/examples")
+async def leetcode_examples(request: Request):
+    return await proxy_to_upstream(
+        request,
+        upstream_client=request.app.state.ai_client,
+        upstream_path="/leetcode/examples",
     )
 
 

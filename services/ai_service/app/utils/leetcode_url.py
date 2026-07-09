@@ -6,7 +6,8 @@ import re
 from urllib.parse import urlparse
 
 LEETCODE_PROBLEM_PATTERN = re.compile(
-    r"^https?://(?:www\.)?leetcode\.com/problems/(?P<slug>[a-z0-9-]+)/?(?:\?.*)?$",
+    r"^https?://(?:www\.)?leetcode\.com/problems/(?P<slug>[a-z0-9-]+)"
+    r"(?:/(?:description|solutions?|submissions?|discussion|editorial))?/?(?:\?.*)?$",
     re.IGNORECASE,
 )
 

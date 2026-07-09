@@ -13,10 +13,14 @@ from app.agents.leetcode.schemas import (
     FollowUpRequest,
     FollowUpResponse,
     LeetCodeAgentInfoResponse,
+    LeetCodeExampleResponse,
+    LeetCodeHistoryListResponse,
+    LeetCodeModeResponse,
     ManualInputRequiredResponse,
     ProgressResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
+    UpdateSessionRequest,
 )
 from app.agents.leetcode.service import LeetCodeService
 from app.core.rate_limit import (
@@ -97,7 +101,7 @@ def list_agents(
 
 @router.get(
     "/history",
-    response_model=list[SessionSummaryResponse],
+    response_model=LeetCodeHistoryListResponse,
     responses=_ERROR_RESPONSES,
 )
 def get_history(
@@ -105,9 +109,38 @@ def get_history(
     leetcode_service: LeetCodeService = Depends(get_leetcode_service),
     limit: int = 50,
     offset: int = 0,
-) -> list[SessionSummaryResponse]:
+    q: str | None = None,
+) -> LeetCodeHistoryListResponse:
     """Return the authenticated user's LeetCode session history."""
-    return leetcode_service.list_history(current_user, limit=limit, offset=offset)
+    return leetcode_service.list_history(current_user, limit=limit, offset=offset, search=q)
+
+
+@router.get(
+    "/modes",
+    response_model=list[LeetCodeModeResponse],
+    responses=_ERROR_RESPONSES,
+)
+def get_modes(
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> list[LeetCodeModeResponse]:
+    """Return available LeetCode coaching modes."""
+    _ = current_user
+    return leetcode_service.list_modes()
+
+
+@router.get(
+    "/examples",
+    response_model=list[LeetCodeExampleResponse],
+    responses=_ERROR_RESPONSES,
+)
+def get_examples(
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> list[LeetCodeExampleResponse]:
+    """Return starter example problems for the hero section."""
+    _ = current_user
+    return leetcode_service.list_examples()
 
 
 @router.get(
@@ -135,6 +168,21 @@ def get_progress(
 ) -> ProgressResponse:
     """Return the user's LeetCode practice progress."""
     return leetcode_service.get_progress(current_user)
+
+
+@router.patch(
+    "/history/{session_id}",
+    response_model=SessionSummaryResponse,
+    responses=_ERROR_RESPONSES,
+)
+def update_session(
+    session_id: UUID,
+    payload: UpdateSessionRequest,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> SessionSummaryResponse:
+    """Update a LeetCode session (e.g. persist the selected model)."""
+    return leetcode_service.update_session(current_user, session_id, payload)
 
 
 @router.delete(

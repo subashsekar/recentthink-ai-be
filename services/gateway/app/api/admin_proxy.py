@@ -15,7 +15,7 @@ router = APIRouter(tags=["admin-proxy"])
 
 @router.api_route(
     "/admin/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
 )
 async def admin_catchall(request: Request, path: str):
     return await proxy_to_upstream(

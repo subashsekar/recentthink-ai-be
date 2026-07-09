@@ -44,6 +44,8 @@ class AISession(TimestampedModel, Base):
         server_default=SessionStatus.PENDING.value,
         nullable=False,
     )
+    model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mode_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     context_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 

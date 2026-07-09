@@ -106,6 +106,29 @@ async def test_forwards_path_query_and_authorization_header(
 
 
 @pytest.mark.asyncio
+async def test_forwards_leetcode_history_patch(
+    make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PATCH"
+        assert request.url.path == "/leetcode/history/abc-123"
+        assert request.headers.get("authorization") == "Bearer test.jwt"
+        assert request.content == b'{"model_id":"openai/gpt-4o-mini"}'
+        return httpx.Response(200, json={"id": "abc-123", "model_id": "openai/gpt-4o-mini"})
+
+    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+        resp = await client.patch(
+            "/leetcode/history/abc-123",
+            headers={"Authorization": "Bearer test.jwt"},
+            json={"model_id": "openai/gpt-4o-mini"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["model_id"] == "openai/gpt-4o-mini"
+
+
+
+@pytest.mark.asyncio
 async def test_retries_transient_connect_error_then_succeeds(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
@@ -160,6 +183,32 @@ async def test_streaming_passthrough(
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
     assert body == b"data: one\n\ndata: two\n\n"
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_allows_localhost_3001(
+    make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
+) -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"ok": True})
+
+    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+        resp = await client.options(
+            "/auth/login",
+            headers={
+                "Origin": "http://localhost:3001",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3001"
+    assert called is False
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,6 @@ from app.agents.leetcode.agents import (
     LeetCodeAgentSpec,
     LeetCodeAgents,
 )
-from app.agents.leetcode.service import LeetCodeService
 
 __all__ = [
     "LEETCODE_AGENT_SPECS",
@@ -17,5 +16,4 @@ __all__ = [
     "LeetCodeAgentRole",
     "LeetCodeAgentSpec",
     "LeetCodeAgents",
-    "LeetCodeService",
 ]

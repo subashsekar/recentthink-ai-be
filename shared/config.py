@@ -163,7 +163,12 @@ class Settings(BaseSettings):
     # ``CORS_ORIGINS=http://localhost:3000,https://app.example.com``) is parsed
     # by the ``field_validator`` below instead of being treated as JSON.
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:3000"],
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+        ],
     )
     cors_allow_credentials: bool = True
     cors_allow_methods: Annotated[list[str], NoDecode] = Field(
@@ -184,7 +189,7 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_model: str = "google/gemini-2.5-flash"
     openrouter_timeout_seconds: int = 120
 
     # --- Inter-service URLs -----------------------------------------------

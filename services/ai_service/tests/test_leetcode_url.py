@@ -20,6 +20,22 @@ def test_extract_slug_without_trailing_slash() -> None:
     assert extract_leetcode_slug("https://leetcode.com/problems/two-sum") == "two-sum"
 
 
+def test_extract_slug_from_description_url() -> None:
+    assert (
+        extract_leetcode_slug(
+            "https://leetcode.com/problems/duplicate-emails/description/",
+        )
+        == "duplicate-emails"
+    )
+
+
+def test_extract_slug_from_solutions_url() -> None:
+    assert (
+        extract_leetcode_slug("https://leetcode.com/problems/two-sum/solutions/")
+        == "two-sum"
+    )
+
+
 def test_invalid_url_raises() -> None:
     with pytest.raises(InvalidLeetCodeURLError):
         extract_leetcode_slug("https://example.com/problems/two-sum/")

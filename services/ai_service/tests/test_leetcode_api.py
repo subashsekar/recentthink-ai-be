@@ -15,11 +15,14 @@ from app.agents.leetcode.schemas import (
     CoderOutput,
     EvaluatorOutput,
     FollowUpResponse,
+    LeetCodeHistoryItemResponse,
+    LeetCodeHistoryListResponse,
     ManualInputRequiredResponse,
     PlannerOutput,
     ProblemData,
     ProgressResponse,
     SessionSummaryResponse,
+    UpdateSessionRequest,
 )
 from app.dependencies.auth import AuthenticatedUser, require_authenticated_user
 from app.main import app
@@ -177,27 +180,74 @@ def test_follow_up_endpoint(client: TestClient, mock_leetcode_service: MagicMock
 
 
 def test_history_endpoint(client: TestClient, mock_leetcode_service: MagicMock) -> None:
+    session_id = uuid4()
     mock_leetcode_service.list_history = MagicMock(
-        return_value=[
-            SessionSummaryResponse(
-                id=uuid4(),
-                problem_title="Two Sum",
-                problem_slug="two-sum",
-                problem_url="https://leetcode.com/problems/two-sum/",
-                difficulty="Easy",
-                category="Array",
-                status=SessionStatus.COMPLETED,
-                created_at=datetime.now(tz=UTC),
-                updated_at=datetime.now(tz=UTC),
-            ),
-        ],
+        return_value=LeetCodeHistoryListResponse(
+            items=[
+                LeetCodeHistoryItemResponse(
+                    session_id=session_id,
+                    title="Two Sum",
+                    model_id="openai/gpt-4o-mini",
+                    created_at=datetime.now(tz=UTC),
+                    updated_at=datetime.now(tz=UTC),
+                ),
+            ],
+            page=1,
+            page_size=50,
+            total=1,
+        ),
     )
     response = client.get(
         "/leetcode/history",
         headers={"Authorization": "Bearer fake-token"},
     )
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["session_id"] == str(session_id)
+    assert body["items"][0]["model_id"] == "openai/gpt-4o-mini"
+
+
+def test_update_session_model_endpoint(
+    client: TestClient,
+    mock_leetcode_service: MagicMock,
+) -> None:
+    session_id = uuid4()
+    mock_leetcode_service.update_session = MagicMock(
+        return_value=SessionSummaryResponse(
+            id=session_id,
+            problem_title="Two Sum",
+            problem_slug="two-sum",
+            problem_url="https://leetcode.com/problems/two-sum/",
+            difficulty="Easy",
+            category="Array",
+            status=SessionStatus.COMPLETED,
+            model_id="google/gemini-flash-1.5",
+            created_at=datetime.now(tz=UTC),
+            updated_at=datetime.now(tz=UTC),
+        ),
+    )
+    response = client.patch(
+        f"/leetcode/history/{session_id}",
+        json={"model_id": "google/gemini-flash-1.5"},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["model_id"] == "google/gemini-flash-1.5"
+    mock_leetcode_service.update_session.assert_called_once()
+    call_args = mock_leetcode_service.update_session.call_args.args
+    assert call_args[1] == session_id
+    assert isinstance(call_args[2], UpdateSessionRequest)
+    assert call_args[2].model_id == "google/gemini-flash-1.5"
+
+
+def test_update_session_requires_auth() -> None:
+    with TestClient(app) as unauth_client:
+        response = unauth_client.patch(
+            f"/leetcode/history/{uuid4()}",
+            json={"model_id": "openai/gpt-4o-mini"},
+        )
+    assert response.status_code == 401
 
 
 def test_progress_endpoint(client: TestClient, mock_leetcode_service: MagicMock) -> None:

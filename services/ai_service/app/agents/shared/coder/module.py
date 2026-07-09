@@ -88,9 +88,17 @@ class CoderModule:
             ("Better Solution", "better_solution"),
             ("Optimal Solution", "optimal_solution"),
         )
+        alias_keys = {
+            "better_solution": "better",
+            "optimal_solution": "optimal",
+        }
         results: list[tuple[str, dict[str, Any]]] = []
         for label, key in labels:
             raw = payload.get(key)
+            if not isinstance(raw, dict) or not raw.get("code"):
+                alias = alias_keys.get(key)
+                if alias:
+                    raw = payload.get(alias)
             if isinstance(raw, dict) and raw.get("code"):
                 results.append((label, raw))
         return results

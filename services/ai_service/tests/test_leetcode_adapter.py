@@ -30,6 +30,19 @@ def test_to_coder_output_maps_structured_solutions() -> None:
     assert output.optimal is not None
 
 
+def test_to_coder_output_maps_solutions_array() -> None:
+    structured = {
+        "language": "python",
+        "solutions": [
+            {"approach": "Brute Force", "code": "def bf(): pass"},
+            {"approach": "Optimal", "code": "def opt(): pass"},
+        ],
+    }
+    output = to_coder_output(structured)
+    assert output.brute_force is not None
+    assert output.better is not None
+
+
 def test_to_analyze_response_maps_platform_chat() -> None:
     problem = ProblemData(
         title="Two Sum",

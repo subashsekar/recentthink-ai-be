@@ -118,8 +118,9 @@ services:
     environment:
       <<: *service-env
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      AVAILABLE_MODELS: ${AVAILABLE_MODELS:-google/gemini-2.5-flash,deepseek/deepseek-chat,meta-llama/llama-3.3-70b-instruct,openai/gpt-4o,nvidia/llama-3.1-nemotron-ultra-253b-v1}
       USAGE_SERVICE_URL: http://usage_service:8005
 
   usage_service:

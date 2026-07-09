@@ -30,7 +30,11 @@ class AIServiceSettings(BaseSettings):
     prompt_default_version: str = "v1"
     prompt_default_locale: str = "en"
     available_models: str = (
-        "openai/gpt-4o-mini,openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-flash-1.5"
+        "google/gemini-2.5-flash,"
+        "deepseek/deepseek-chat,"
+        "meta-llama/llama-3.3-70b-instruct,"
+        "openai/gpt-4o,"
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1"
     )
     model_cost_per_1k_input_tokens: float = 0.00015
     model_cost_per_1k_output_tokens: float = 0.0006

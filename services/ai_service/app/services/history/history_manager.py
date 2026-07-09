@@ -49,6 +49,8 @@ class HistoryManager:
             title=session.title,
             status=session.status,
             summary=session.summary,
+            model_id=session.model_id,
+            mode_id=session.mode_id,
             created_at=session.created_at,
             updated_at=session.updated_at,
         )

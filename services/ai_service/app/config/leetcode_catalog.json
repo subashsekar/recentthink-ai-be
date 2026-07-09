@@ -1,0 +1,61 @@
+{
+  "modes": [
+    {
+      "id": "learning",
+      "label": "Learning Mode",
+      "instructions": "You are in LEARNING MODE. Teach step-by-step: explain concepts, use analogies, give hints before full solutions, highlight common mistakes, and build intuition. Do not dump the complete optimal solution immediately unless the student asks."
+    },
+    {
+      "id": "teacher",
+      "label": "Teacher Mode",
+      "instructions": "You are in TEACHER MODE. Use a structured lesson: problem summary, thinking process, learning objectives, approach, common mistakes, analogy, and a clear next step. Be thorough and pedagogical like a DSA instructor."
+    },
+    {
+      "id": "interview",
+      "label": "Interview Mode",
+      "instructions": "You are in INTERVIEW MODE. Respond like a technical interviewer: be concise, ask clarifying questions when useful, focus on approach and trade-offs, discuss time/space complexity, and suggest follow-up interview questions. Avoid overly long tutorials."
+    },
+    {
+      "id": "quick",
+      "label": "Quick Solve",
+      "instructions": "You are in QUICK SOLVE MODE. Be direct and efficient: state the pattern, optimal approach, complexity, and provide clean code with minimal prose. Skip lengthy teaching unless essential."
+    }
+  ],
+  "examples": [
+    {
+      "id": "two-sum",
+      "title": "Two Sum",
+      "difficulty": "Easy",
+      "pattern": "Hash Map",
+      "url": "https://leetcode.com/problems/two-sum/"
+    },
+    {
+      "id": "valid-parentheses",
+      "title": "Valid Parentheses",
+      "difficulty": "Easy",
+      "pattern": "Stack",
+      "url": "https://leetcode.com/problems/valid-parentheses/"
+    },
+    {
+      "id": "merge-intervals",
+      "title": "Merge Intervals",
+      "difficulty": "Medium",
+      "pattern": "Intervals",
+      "url": "https://leetcode.com/problems/merge-intervals/"
+    },
+    {
+      "id": "longest-substring-without-repeating-characters",
+      "title": "Longest Substring Without Repeating Characters",
+      "difficulty": "Medium",
+      "pattern": "Sliding Window",
+      "url": "https://leetcode.com/problems/longest-substring-without-repeating-characters/"
+    },
+    {
+      "id": "binary-tree-level-order-traversal",
+      "title": "Binary Tree Level Order Traversal",
+      "difficulty": "Medium",
+      "pattern": "BFS",
+      "url": "https://leetcode.com/problems/binary-tree-level-order-traversal/"
+    }
+  ]
+}

@@ -6,12 +6,15 @@ from typing import Any
 from uuid import UUID
 
 from app.agents.leetcode.schemas import (
+    AnalyzeRequest,
     AnalyzeResponse,
     ChatMessageResponse,
     CoderOutput,
     CoderSolution,
     EvaluatorOutput,
     FollowUpResponse,
+    LeetCodeHistoryItemResponse,
+    LeetCodeHistoryListResponse,
     PlannerOutput,
     ProblemData,
     SessionDetailResponse,
@@ -42,12 +45,37 @@ def _to_coder_solution(raw: dict[str, Any] | None, *, default_approach: str) -> 
     )
 
 
+def _solutions_array_to_structured(payload: dict[str, Any]) -> dict[str, Any]:
+    """Map a legacy solutions[] array into brute/better/optimal slots."""
+    solutions = payload.get("solutions") or []
+    if not isinstance(solutions, list) or not solutions:
+        return payload
+    if any(payload.get(key) for key in ("brute_force", "better_solution", "optimal_solution", "better", "optimal")):
+        return payload
+    labels = ("brute_force", "better_solution", "optimal_solution")
+    defaults = ("Brute Force", "Better Solution", "Optimal Solution")
+    updated = dict(payload)
+    for index, raw in enumerate(solutions[:3]):
+        if not isinstance(raw, dict) or not raw.get("code"):
+            continue
+        updated[labels[index]] = {
+            "approach": raw.get("approach") or defaults[index],
+            "language": raw.get("language") or payload.get("language") or "python",
+            "code": raw.get("code"),
+            "explanation": raw.get("explanation") or "",
+            "complexity": raw.get("complexity") or "",
+        }
+    return updated
+
+
 def to_coder_output(structured: dict[str, Any] | None) -> CoderOutput:
-    payload = structured or {}
+    payload = _solutions_array_to_structured(structured or {})
+    better_raw = payload.get("better_solution") or payload.get("better")
+    optimal_raw = payload.get("optimal_solution") or payload.get("optimal")
     return CoderOutput(
         brute_force=_to_coder_solution(payload.get("brute_force"), default_approach="Brute Force"),
-        better=_to_coder_solution(payload.get("better_solution"), default_approach="Better Solution"),
-        optimal=_to_coder_solution(payload.get("optimal_solution"), default_approach="Optimal Solution"),
+        better=_to_coder_solution(better_raw, default_approach="Better Solution"),
+        optimal=_to_coder_solution(optimal_raw, default_approach="Optimal Solution"),
     )
 
 
@@ -80,13 +108,19 @@ def to_planner_output(chat: ChatResponse, problem: ProblemData) -> PlannerOutput
     )
 
 
-def to_analyze_response(chat: ChatResponse, problem: ProblemData) -> AnalyzeResponse:
+def to_analyze_response(
+    chat: ChatResponse,
+    problem: ProblemData,
+    *,
+    mode_id: str | None = None,
+) -> AnalyzeResponse:
     teacher_module = next((m for m in chat.modules if m.module == ModuleName.TEACHER), None)
     coder_structured = _module_response(chat, ModuleName.CODER)
     evaluator_structured = _module_response(chat, ModuleName.EVALUATOR)
     return AnalyzeResponse(
         session_id=chat.session_id,
         status=chat.status,
+        mode_id=mode_id,
         problem=problem,
         planner=to_planner_output(chat, problem),
         teacher=teacher_module.content if teacher_module else "",
@@ -101,6 +135,10 @@ def _problem_from_context(context: dict[str, Any] | None) -> dict[str, Any]:
     return context or {}
 
 
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
 def to_session_summary(session: AISession) -> SessionSummaryResponse:
     context = _problem_from_context(session.context_metadata)
     return SessionSummaryResponse(
@@ -111,8 +149,22 @@ def to_session_summary(session: AISession) -> SessionSummaryResponse:
         difficulty=context.get("difficulty"),
         category=(context.get("topics") or [None])[0] if context.get("topics") else None,
         status=session.status,
+        model_id=_optional_str(session.model_id),
+        mode_id=_optional_str(session.mode_id),
         created_at=session.created_at,
         updated_at=session.updated_at,
+    )
+
+
+def to_history_item(session: AISession) -> LeetCodeHistoryItemResponse:
+    summary = to_session_summary(session)
+    return LeetCodeHistoryItemResponse(
+        session_id=summary.id,
+        title=summary.problem_title or "Untitled Session",
+        model_id=summary.model_id,
+        mode_id=summary.mode_id,
+        created_at=summary.created_at,
+        updated_at=summary.updated_at,
     )
 
 
@@ -155,6 +207,8 @@ def to_session_detail(detail: PlatformSessionDetailResponse) -> SessionDetailRes
         difficulty=problem_context.get("difficulty"),
         category=(problem_context.get("topics") or [None])[0] if problem_context.get("topics") else None,
         status=detail.session.status,
+        model_id=detail.session.model_id,
+        mode_id=detail.session.mode_id,
         problem_description=problem_context.get("description"),
         messages=[_to_chat_message(message) for message in detail.messages],
         created_at=detail.session.created_at,

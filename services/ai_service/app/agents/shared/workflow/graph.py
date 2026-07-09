@@ -67,6 +67,7 @@ class AIWorkflowEngine:
             "title": sanitized_request.title,
             "context": sanitized_request.context,
             "model": sanitized_request.model,
+            "mode_id": sanitized_request.mode_id,
             "temperature": sanitized_request.temperature,
             "max_tokens": sanitized_request.max_tokens,
             "memory_context": {},

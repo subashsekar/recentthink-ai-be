@@ -7,8 +7,13 @@ import time
 from typing import Any
 from uuid import UUID
 
+from app.agents.shared.coaching_modes import build_mode_prompt_prefix
 from app.agents.shared.coder.module import CoderModule
 from app.agents.shared.evaluator.module import EvaluatorModule
+from app.agents.shared.llm_response_normalizer import (
+    is_llm_response_empty,
+    normalize_unified_llm_payload,
+)
 from app.agents.shared.planner.planner import Planner
 from app.agents.shared.teacher.module import TeacherModule
 from app.clients.openrouter import OpenRouterClient
@@ -143,14 +148,17 @@ class WorkflowNodes:
             feature=planner.feature.value,
             module_name="single_llm",
         )
+        mode_prefix = build_mode_prompt_prefix(state.get("mode_id"))
+        if mode_prefix:
+            system_prompt = f"{mode_prefix}{system_prompt}"
         user_prompt = self._build_user_prompt(state, planner)
         llm_calls = 0
         max_json_retries = self._ai_settings.json_validation_max_retries
-        validated: UnifiedLLMResponse | None = None
         response = None
         last_validation_error: str | None = None
 
         try:
+            validated_payload: dict[str, Any] | None = None
             for json_attempt in range(max_json_retries + 1):
                 llm_calls += 1
                 response = await self._llm.chat_completion(
@@ -161,17 +169,32 @@ class WorkflowNodes:
                     max_tokens=state.get("max_tokens", 4096),
                 )
                 validation = self._validator.validate(response.content, UnifiedLLMResponse)
-                if validation.success and validation.data is not None:
-                    validated = validation.data  # type: ignore[assignment]
-                    break
-                last_validation_error = validation.error
-                logger.warning(
-                    "llm_json_retry",
-                    extra={"attempt": json_attempt + 1, "error": last_validation_error},
+                if not validation.success or validation.data is None:
+                    last_validation_error = validation.error
+                    logger.warning(
+                        "llm_json_retry",
+                        extra={"attempt": json_attempt + 1, "error": last_validation_error},
+                    )
+                    continue
+
+                parsed = validation.data.model_dump()
+                normalized = normalize_unified_llm_payload(
+                    parsed,
+                    planner_metadata=planner.metadata,
                 )
+                if is_llm_response_empty(normalized) and json_attempt < max_json_retries:
+                    last_validation_error = "LLM returned empty teacher/coder content"
+                    logger.warning(
+                        "llm_empty_response_retry",
+                        extra={"attempt": json_attempt + 1},
+                    )
+                    continue
+
+                validated_payload = normalized
+                break
 
             elapsed = int((time.perf_counter() - start) * 1000)
-            if validated is None or response is None:
+            if validated_payload is None or response is None:
                 self._complete_trace(
                     state,
                     trace_entry,
@@ -205,12 +228,11 @@ class WorkflowNodes:
                 estimated_cost=cost.usd,
                 trace_metadata={"model": response.model, "provider": response.provider, "llm_calls": llm_calls},
             )
-            parsed = validated.model_dump()
             return {
-                "llm_raw": parsed,
-                "teacher_output": parsed.get("teacher"),
-                "coder_output": parsed.get("coder"),
-                "evaluator_output": parsed.get("evaluator"),
+                "llm_raw": validated_payload,
+                "teacher_output": validated_payload.get("teacher"),
+                "coder_output": validated_payload.get("coder"),
+                "evaluator_output": validated_payload.get("evaluator"),
                 "latency_ms": response.latency_ms,
                 "token_usage": {
                     "input_tokens": response.prompt_tokens,
@@ -493,6 +515,25 @@ class WorkflowNodes:
             f"Classification: {planner.metadata.get('classification', 'general')}",
             f"Modules: {', '.join(module.value for module in planner.modules)}",
         ]
+        metadata = planner.metadata or {}
+        if planner.feature.value == "leetcode":
+            context = state.get("context") or {}
+            title = context.get("title") or state.get("title") or metadata.get("problem_slug") or "Unknown"
+            problem_lines = [
+                f"Title: {title}",
+                f"Difficulty: {metadata.get('difficulty') or context.get('difficulty') or 'Unknown'}",
+                f"Category: {metadata.get('problem_category', 'General')}",
+                f"Patterns: {', '.join(metadata.get('patterns') or context.get('topics') or [])}",
+            ]
+            objectives = metadata.get("learning_objectives") or []
+            if objectives:
+                problem_lines.append("Learning objectives:")
+                problem_lines.extend(f"- {item}" for item in objectives)
+            plan = metadata.get("execution_plan") or []
+            if plan:
+                problem_lines.append("Execution plan:")
+                problem_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
+            sections.append("Problem metadata:\n" + "\n".join(problem_lines))
         context = state.get("context")
         if context:
             sections.append(f"Context:\n{json.dumps(context, indent=2, default=str)}")

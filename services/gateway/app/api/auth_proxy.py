@@ -29,9 +29,10 @@ def _auth_requires_auth(path: str) -> bool:
 
 @router.api_route(
     "/auth/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
 )
 async def auth_catchall(request: Request, path: str):
+    # OPTIONS preflight is handled by CORSMiddleware — do not proxy it upstream.
     return await proxy_to_upstream(
         request,
         upstream_client=request.app.state.auth_client,

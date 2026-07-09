@@ -1,0 +1,64 @@
+{
+  "models": [
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "provider": "Google",
+      "description": "Fast, inexpensive and recommended",
+      "recommended": true,
+      "enabled": true,
+      "tier": "free",
+      "context_window": 1000000,
+      "supports_vision": true,
+      "supports_streaming": true
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "name": "DeepSeek V3",
+      "provider": "DeepSeek",
+      "description": "Excellent coding model",
+      "recommended": true,
+      "enabled": true,
+      "tier": "free",
+      "context_window": 64000,
+      "supports_vision": false,
+      "supports_streaming": true
+    },
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct",
+      "name": "Llama 3.3 70B",
+      "provider": "Groq / Meta",
+      "description": "Ultra-fast responses",
+      "recommended": true,
+      "enabled": true,
+      "tier": "free",
+      "context_window": 128000,
+      "supports_vision": false,
+      "supports_streaming": true
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "GPT-4o",
+      "provider": "OpenAI",
+      "description": "Premium reasoning and interview coaching",
+      "recommended": false,
+      "enabled": true,
+      "tier": "pro",
+      "context_window": 128000,
+      "supports_vision": true,
+      "supports_streaming": true
+    },
+    {
+      "id": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+      "name": "Nemotron Ultra",
+      "provider": "NVIDIA",
+      "description": "Enterprise reasoning model",
+      "recommended": false,
+      "enabled": true,
+      "tier": "enterprise",
+      "context_window": 128000,
+      "supports_vision": false,
+      "supports_streaming": true
+    }
+  ]
+}
