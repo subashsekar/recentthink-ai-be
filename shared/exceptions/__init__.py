@@ -9,6 +9,7 @@ from shared.exceptions.auth import (
     EmailNotVerifiedError,
     ExpiredTokenError,
     ForbiddenError,
+    BlockedUserError,
     InactiveUserError,
     InvalidCredentialsError,
     InvalidTokenError,
@@ -25,6 +26,7 @@ from shared.exceptions.base import (
 from shared.exceptions.email import EmailDeliveryError, EmailError
 from shared.exceptions.repository import (
     DuplicateEmailError,
+    DuplicateUsernameError,
     RecordNotFoundError,
     RepositoryError,
 )
@@ -37,12 +39,14 @@ __all__ = [
     "BusinessException",
     "DatabaseException",
     "DuplicateEmailError",
+    "DuplicateUsernameError",
     "EmailAlreadyVerifiedError",
     "EmailDeliveryError",
     "EmailError",
     "EmailNotVerifiedError",
     "ExpiredTokenError",
     "ForbiddenError",
+    "BlockedUserError",
     "InactiveUserError",
     "InvalidCredentialsError",
     "InvalidTokenError",

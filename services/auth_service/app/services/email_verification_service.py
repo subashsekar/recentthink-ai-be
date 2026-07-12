@@ -113,7 +113,11 @@ class EmailVerificationService:
             raise UserNotFoundError("User not found.")
 
         if not user.is_verified:
-            self._users.update_user(user.id, is_verified=True)
+            self._users.update_user(
+                user.id,
+                is_verified=True,
+                email_verified_at=datetime.now(tz=UTC),
+            )
         self._tokens.mark_as_used(stored.id)
 
         logger.info("Email verified user_id=%s", user.id)

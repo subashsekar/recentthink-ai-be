@@ -26,6 +26,7 @@ class UserResponse(BaseSchema):
     role: Role
     is_verified: bool
     is_active: bool
+    is_blocked: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -44,6 +45,7 @@ class CurrentUserResponse(BaseSchema):
     role: Role
     is_verified: bool
     is_active: bool
+    is_blocked: bool = False
     created_at: datetime
     updated_at: datetime
 

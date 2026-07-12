@@ -10,8 +10,10 @@ from uuid import UUID
 from app.coaching.registry import get_mode_registry
 from app.coaching.prompt_loader import get_mode_prompt_loader
 from app.agents.shared.coder.module import CoderModule
+from app.agents.shared.code_explainer.module import CodeExplainerModule
 from app.agents.shared.evaluator.module import EvaluatorModule
 from app.agents.shared.llm_response_normalizer import (
+    feature_payload_missing_content,
     is_llm_response_empty,
     normalize_unified_llm_payload,
 )
@@ -42,11 +44,13 @@ _MODULE_PROCESSORS: dict[ModuleName, tuple[Any, str]] = {}
 def _get_processors(
     teacher: TeacherModule,
     coder: CoderModule,
+    code_explainer: CodeExplainerModule,
     evaluator: EvaluatorModule,
 ) -> dict[ModuleName, tuple[Any, str]]:
     return {
         ModuleName.TEACHER: (teacher, "teacher"),
         ModuleName.CODER: (coder, "coder"),
+        ModuleName.CODE_EXPLAINER: (code_explainer, "code_explainer"),
         ModuleName.EVALUATOR: (evaluator, "evaluator"),
     }
 
@@ -60,6 +64,7 @@ class WorkflowNodes:
         planner: Planner | None = None,
         teacher: TeacherModule | None = None,
         coder: CoderModule | None = None,
+        code_explainer: CodeExplainerModule | None = None,
         evaluator: EvaluatorModule | None = None,
         llm_client: OpenRouterClient | None = None,
         prompt_loader: PromptLoader | None = None,
@@ -74,6 +79,7 @@ class WorkflowNodes:
         self._planner = planner or Planner()
         self._teacher = teacher or TeacherModule()
         self._coder = coder or CoderModule()
+        self._code_explainer = code_explainer or CodeExplainerModule()
         self._evaluator = evaluator or EvaluatorModule()
         self._llm = llm_client or OpenRouterClient()
         self._prompts = prompt_loader or PromptLoader()
@@ -147,7 +153,11 @@ class WorkflowNodes:
         planner = PlannerOutput.model_validate(state.get("planner_output") or {})
         mode_registry = get_mode_registry()
         mode_cfg = mode_registry.resolve(state.get("mode_id"))
-        mode_prompt = get_mode_prompt_loader().load(mode_cfg.analyze_prompt or mode_cfg.metadata.id)
+        # Curriculum-style features must not inherit LeetCode coaching-mode prompts.
+        if planner.feature in {AIFeature.COURSE_GENERATOR, AIFeature.DSA_PATTERN}:
+            mode_prompt = ""
+        else:
+            mode_prompt = get_mode_prompt_loader().load(mode_cfg.analyze_prompt or mode_cfg.metadata.id)
         schema_prompt = self._prompts.load(feature=planner.feature.value, module_name="single_llm")
         system_prompt = "\n\n".join([part for part in (mode_prompt, schema_prompt) if part])
         user_prompt = self._build_user_prompt(state, planner)
@@ -184,13 +194,24 @@ class WorkflowNodes:
                     parsed,
                     planner_metadata=planner.metadata,
                 )
-                if is_llm_response_empty(normalized) and json_attempt < max_json_retries:
-                    last_validation_error = "LLM returned empty teacher/coder content"
+                # Planner metadata can pad teacher fields; still require real feature payload.
+                feature_empty = feature_payload_missing_content(planner.feature.value, normalized)
+                if (is_llm_response_empty(normalized) or feature_empty) and json_attempt < max_json_retries:
+                    last_validation_error = (
+                        "LLM returned empty feature content"
+                        if feature_empty
+                        else "LLM returned empty teacher/coder content"
+                    )
                     logger.warning(
                         "llm_empty_response_retry",
-                        extra={"attempt": json_attempt + 1},
+                        extra={"attempt": json_attempt + 1, "feature": planner.feature.value},
                     )
                     continue
+
+                if feature_empty:
+                    last_validation_error = "LLM returned empty feature content"
+                    validated_payload = None
+                    break
 
                 validated_payload = normalized
                 break
@@ -268,6 +289,9 @@ class WorkflowNodes:
     async def coder_node(self, state: AIWorkflowState) -> dict[str, Any]:
         return await self._run_module_node(state, ModuleName.CODER)
 
+    async def code_explainer_node(self, state: AIWorkflowState) -> dict[str, Any]:
+        return await self._run_module_node(state, ModuleName.CODE_EXPLAINER)
+
     async def evaluator_node(self, state: AIWorkflowState) -> dict[str, Any]:
         return await self._run_module_node(state, ModuleName.EVALUATOR)
 
@@ -277,15 +301,26 @@ class WorkflowNodes:
         session_id = UUID(state["session_id"])
         user_id = UUID(state["user_id"])
         errors = list(state.get("errors", []))
-        final_status = WorkflowStatus.COMPLETED if not errors else WorkflowStatus.PARTIAL
+        prior_status = state.get("status")
+        if prior_status == WorkflowStatus.FAILED.value:
+            final_status = WorkflowStatus.FAILED
+        elif errors:
+            final_status = WorkflowStatus.PARTIAL
+        else:
+            final_status = WorkflowStatus.COMPLETED
 
         try:
             module_outputs = state.get("module_responses") or []
             summary = module_outputs[0]["content"] if module_outputs else None
             if self._sessions is not None:
+                session_status = (
+                    SessionStatus.FAILED
+                    if final_status == WorkflowStatus.FAILED
+                    else SessionStatus.COMPLETED if not errors else SessionStatus.FAILED
+                )
                 self._sessions.update_session(
                     session_id,
-                    status=SessionStatus.COMPLETED if not errors else SessionStatus.FAILED,
+                    status=session_status,
                     summary=summary[:500] if summary else None,
                 )
 
@@ -345,9 +380,25 @@ class WorkflowNodes:
 
         start = time.perf_counter()
         trace_entry = self._begin_trace(state, module_name)
-        processors = _get_processors(self._teacher, self._coder, self._evaluator)
+        processors = _get_processors(self._teacher, self._coder, self._code_explainer, self._evaluator)
         processor, key = processors[module_name]
-        payload = state.get(f"{key}_output") or (state.get("llm_raw") or {}).get(key) or {}
+        if module_name == ModuleName.CODE_EXPLAINER:
+            # Code explainer derives from the full normalized LLM payload + current module outputs.
+            payload = {
+                "llm_raw": state.get("llm_raw") or {},
+                "coder_output": state.get("coder_output") or {},
+                "evaluator_output": state.get("evaluator_output") or {},
+                "planner_output": state.get("planner_output") or {},
+            }
+        else:
+            payload = state.get(f"{key}_output") or (state.get("llm_raw") or {}).get(key) or {}
+            if module_name == ModuleName.TEACHER and isinstance(payload, dict):
+                course = (state.get("llm_raw") or {}).get("course")
+                if isinstance(course, dict) and course:
+                    payload = {**payload, "course": course}
+                dsa_pattern = (state.get("llm_raw") or {}).get("dsa_pattern")
+                if isinstance(dsa_pattern, dict) and dsa_pattern:
+                    payload = {**payload, "dsa_pattern": dsa_pattern}
         session_id = UUID(state["session_id"])
 
         try:
@@ -536,6 +587,72 @@ class WorkflowNodes:
                 problem_lines.append("Execution plan:")
                 problem_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
             sections.append("Problem metadata:\n" + "\n".join(problem_lines))
+        if planner.feature.value == "course_generator":
+            weeks = int(metadata.get("weeks") or max(4, int(metadata.get("duration_days") or 60) // 7))
+            min_lessons = weeks * 2
+            course_lines = [
+                f"Skill: {metadata.get('skill', 'General')}",
+                f"Goal: {metadata.get('goal', '')}",
+                f"Level: {metadata.get('current_level') or metadata.get('difficulty', 'Beginner')}",
+                f"Target level: {metadata.get('target_level', 'Advanced')}",
+                f"Duration: {metadata.get('duration_days', 60)} days @ {metadata.get('daily_hours', 2)}h/day",
+                f"Estimated study hours: {metadata.get('estimated_study_hours', 0)}",
+                f"Learning style: {metadata.get('learning_style', 'Hands-on')}",
+                f"Instruction language: {metadata.get('language', 'English')}",
+                f"Programming language: {metadata.get('programming_language', 'Python')}",
+                "",
+                "COMPLETENESS REQUIREMENTS (do not skip):",
+                f"- roadmap for all {weeks} weeks with daily_topics",
+                f"- >= {min_lessons} full lessons (concept_explanation + examples + analogies)",
+                f"- >= {weeks} quizzes with 5+ questions and flashcards each",
+                f"- >= {weeks} assignments with tasks + coding_exercises",
+                "- 4 projects: beginner, intermediate, advanced, resume",
+                "- weekly assessments + one final assessment",
+                "- 8+ resources, learning_tips, adaptive recommendations",
+                "- Populate course.lessons / quizzes / assignments / projects / assessments fully",
+            ]
+            if metadata.get("topics_include"):
+                course_lines.append(f"Include topics: {', '.join(metadata['topics_include'])}")
+            if metadata.get("topics_exclude"):
+                course_lines.append(f"Exclude topics: {', '.join(metadata['topics_exclude'])}")
+            objectives = metadata.get("learning_objectives") or []
+            if objectives:
+                course_lines.append("Learning objectives:")
+                course_lines.extend(f"- {item}" for item in objectives)
+            plan = metadata.get("execution_plan") or []
+            if plan:
+                course_lines.append("Execution plan:")
+                course_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
+            sections.append("Course request metadata:\n" + "\n".join(course_lines))
+        if planner.feature.value == "dsa_pattern":
+            pattern_lines = [
+                f"Pattern: {metadata.get('pattern', 'General')}",
+                f"Category: {metadata.get('category', 'General')}",
+                f"Level / difficulty: {metadata.get('difficulty') or metadata.get('level', 'Beginner')}",
+                f"Preferred language: {metadata.get('language', 'Python')}",
+                f"Learning style: {metadata.get('learning_style', 'Visual')}",
+                f"Estimated study time: {metadata.get('estimated_study_time', '')}",
+                "",
+                "COMPLETENESS REQUIREMENTS (do not skip):",
+                "- overview with beginner/intermediate/advanced explanations",
+                "- mental_model with analogies",
+                "- recognition keywords/signals/rules/decision_tree/checklist",
+                "- visualization (ASCII + step-by-step, frontend-friendly)",
+                "- reusable templates for Python, Java, C++, JavaScript, Go, Rust, C#",
+                "- easy_example, medium_example, hard_example with full walkthroughs",
+                "- interview_tips, pattern_comparison, practice sets, quiz",
+                "- next_pattern_recommendation",
+                "- Populate dsa_pattern fully — focus on HOW TO IDENTIFY the pattern",
+            ]
+            objectives = metadata.get("learning_objectives") or []
+            if objectives:
+                pattern_lines.append("Learning objectives:")
+                pattern_lines.extend(f"- {item}" for item in objectives)
+            plan = metadata.get("execution_plan") or []
+            if plan:
+                pattern_lines.append("Execution plan:")
+                pattern_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
+            sections.append("DSA pattern request metadata:\n" + "\n".join(pattern_lines))
         context = state.get("context")
         if context:
             sections.append(f"Context:\n{json.dumps(context, indent=2, default=str)}")

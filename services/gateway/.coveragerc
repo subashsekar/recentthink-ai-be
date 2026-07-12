@@ -1,0 +1,16 @@
+# Coverage config for the API Gateway package only.
+[run]
+branch = true
+source = ["services/gateway/app"]
+omit =
+    */tests/*
+    */__pycache__/*
+
+[report]
+show_missing = true
+skip_covered = false
+fail_under = 90
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError

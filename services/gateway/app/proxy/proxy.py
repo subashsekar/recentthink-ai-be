@@ -1,4 +1,8 @@
-"""Reverse-proxy utilities for routing Gateway → AI Service."""
+"""Reusable reverse-proxy for Gateway → downstream microservices.
+
+Forwards method, headers, query params, and body unchanged. Does not validate
+JWT or apply business rules — downstream services own auth and validation.
+"""
 
 from __future__ import annotations
 
@@ -6,24 +10,26 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
+
 import httpx
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from shared.middleware.request_id import REQUEST_ID_HEADER
-
+from app.core.config import PROXY_MAX_RETRIES, PROXY_RETRY_BASE_DELAY_S
 from app.proxy.constants import HOP_BY_HOP_HEADERS
+from shared.middleware.request_id import REQUEST_ID_HEADER
 
 logger = logging.getLogger("gateway.proxy")
 
 
 def _filtered_request_headers(request: Request) -> dict[str, str]:
+    """Copy inbound headers with lowercase keys so duplicates cannot accumulate."""
     headers: dict[str, str] = {}
     for k, v in request.headers.items():
         lk = k.lower()
         if lk in HOP_BY_HOP_HEADERS or lk in {"host", "content-length"}:
             continue
-        headers[k] = v
+        headers[lk] = v
     return headers
 
 
@@ -33,7 +39,7 @@ def _filtered_response_headers(upstream: httpx.Response) -> dict[str, str]:
         lk = k.lower()
         if lk in HOP_BY_HOP_HEADERS or lk in {"content-length"}:
             continue
-        headers[k] = v
+        headers[lk] = v
     return headers
 
 
@@ -43,11 +49,6 @@ def _request_id(request: Request) -> str:
         return rid
     header_val = request.headers.get(REQUEST_ID_HEADER)
     return header_val or ""
-
-
-def _auth_header_present(request: Request) -> bool:
-    auth = request.headers.get("authorization")
-    return bool(auth and auth.strip())
 
 
 def _json_error(status_code: int, detail: str, request: Request) -> JSONResponse:
@@ -78,8 +79,8 @@ def _is_transient_status(code: int) -> bool:
 async def _retry(
     fn: Callable[[], httpx.Response],
     *,
-    max_attempts: int = 3,
-    base_delay_s: float = 0.2,
+    max_attempts: int = PROXY_MAX_RETRIES,
+    base_delay_s: float = PROXY_RETRY_BASE_DELAY_S,
 ) -> httpx.Response:
     last_exc: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
@@ -95,7 +96,7 @@ async def _retry(
             if attempt >= max_attempts:
                 raise
             await asyncio.sleep(base_delay_s * (2 ** (attempt - 1)))
-    raise RuntimeError("unreachable") from last_exc
+    raise RuntimeError("unreachable") from last_exc  # pragma: no cover
 
 
 async def proxy_to_upstream(
@@ -103,12 +104,14 @@ async def proxy_to_upstream(
     *,
     upstream_client: httpx.AsyncClient,
     upstream_path: str,
-    require_auth: bool = True,
+    service_name: str = "upstream",
     stream: bool = False,
 ) -> Response:
-    if require_auth and not _auth_header_present(request):
-        return _json_error(status.HTTP_401_UNAUTHORIZED, "Missing Authorization header.", request)
+    """Forward ``request`` to ``upstream_path`` on ``upstream_client``.
 
+    Authorization and other headers are forwarded as-is. JWT validation is
+    intentionally left to the downstream service.
+    """
     request_id = _request_id(request)
     start = time.perf_counter()
 
@@ -117,7 +120,7 @@ async def proxy_to_upstream(
     body = await request.body()
     headers = _filtered_request_headers(request)
     if request_id:
-        headers[REQUEST_ID_HEADER] = request_id
+        headers[REQUEST_ID_HEADER.lower()] = request_id
 
     async def do_request() -> httpx.Response:
         req = upstream_client.build_request(
@@ -134,31 +137,42 @@ async def proxy_to_upstream(
     except httpx.ReadTimeout:
         latency_ms = int((time.perf_counter() - start) * 1000)
         logger.warning(
-            "proxy timeout method=%s path=%s upstream=%s status=%s latency_ms=%s request_id=%s",
+            "proxy timeout method=%s path=%s service=%s status=%s "
+            "latency_ms=%s request_id=%s",
             method,
             request.url.path,
-            str(upstream_client.base_url.join(upstream_path)),
+            service_name,
             504,
             latency_ms,
             request_id,
         )
-        return _json_error(status.HTTP_504_GATEWAY_TIMEOUT, "Upstream timeout.", request)
+        return _json_error(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            "Gateway Timeout",
+            request,
+        )
     except TransientExc:
         latency_ms = int((time.perf_counter() - start) * 1000)
         logger.warning(
-            "proxy unavailable method=%s path=%s upstream=%s status=%s latency_ms=%s request_id=%s",
+            "proxy unavailable method=%s path=%s service=%s status=%s "
+            "latency_ms=%s request_id=%s",
             method,
             request.url.path,
-            str(upstream_client.base_url.join(upstream_path)),
+            service_name,
             502,
             latency_ms,
             request_id,
         )
-        return _json_error(status.HTTP_502_BAD_GATEWAY, "Upstream unavailable.", request)
+        return _json_error(
+            status.HTTP_502_BAD_GATEWAY,
+            "Bad Gateway",
+            request,
+        )
 
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     if stream:
+
         async def gen() -> AsyncIterator[bytes]:
             try:
                 async for chunk in upstream.aiter_bytes():
@@ -182,19 +196,17 @@ async def proxy_to_upstream(
         )
         await upstream.aclose()
 
-    # Ensure request-id is always echoed from the gateway as well.
     if request_id:
         resp.headers[REQUEST_ID_HEADER] = request_id
 
     logger.info(
-        "proxy method=%s path=%s upstream=%s status=%s latency_ms=%s request_id=%s",
+        "proxy method=%s path=%s service=%s status=%s latency_ms=%s request_id=%s",
         method,
         request.url.path,
-        str(upstream_client.base_url.join(upstream_path)),
+        service_name,
         upstream.status_code,
         latency_ms,
         request_id,
     )
 
     return resp
-

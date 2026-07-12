@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.schemas.common import BaseSchema
 from pydantic import EmailStr, Field
 
@@ -15,7 +17,7 @@ class VerifyEmailRequest(BaseSchema):
 class VerifyEmailResponse(BaseSchema):
     """Successful email verification payload."""
 
-    message: str = "Email verified successfully. You can now log in."
+    message: str = "Email verified successfully."
 
 
 class ResendVerificationRequest(BaseSchema):
@@ -30,9 +32,18 @@ class ResendVerificationResponse(BaseSchema):
     message: str = "Verification email sent. Please check your inbox."
 
 
+class VerificationStatusResponse(BaseSchema):
+    """Current email verification state for the authenticated user."""
+
+    verified: bool
+    email: EmailStr
+    verified_at: datetime | None = None
+
+
 __all__ = [
     "ResendVerificationRequest",
     "ResendVerificationResponse",
+    "VerificationStatusResponse",
     "VerifyEmailRequest",
     "VerifyEmailResponse",
 ]

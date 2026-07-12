@@ -10,23 +10,6 @@ from app.proxy.streaming import should_stream
 router = APIRouter(tags=["auth-proxy"])
 
 
-_PUBLIC_AUTH_PATHS: set[str] = {
-    "login",
-    "register",
-    "refresh",
-    "verify-email",
-    "resend-verification",
-    "forgot-password",
-    "reset-password",
-}
-
-
-def _auth_requires_auth(path: str) -> bool:
-    # /auth/<public> endpoints don't require Authorization.
-    head = path.split("/", 1)[0]
-    return head not in _PUBLIC_AUTH_PATHS
-
-
 @router.api_route(
     "/auth/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -37,7 +20,6 @@ async def auth_catchall(request: Request, path: str):
         request,
         upstream_client=request.app.state.auth_client,
         upstream_path=f"/auth/{path}",
-        require_auth=_auth_requires_auth(path),
+        service_name="auth",
         stream=should_stream(request),
     )
-

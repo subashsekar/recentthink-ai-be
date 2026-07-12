@@ -26,6 +26,7 @@ def create_access_token(
     email: str,
     role: str,
     pwd_ts: float = 0.0,
+    is_verified: bool = False,
     settings: Settings | None = None,
 ) -> str:
     """Encode and return a signed access token for the given user claims.
@@ -37,6 +38,9 @@ def create_access_token(
     ``pwd_ts`` is the epoch-seconds timestamp of the user's last password
     change. It lets the server reject access tokens issued before a subsequent
     password reset/change, invalidating stale sessions.
+
+    ``is_verified`` lets downstream services gate features that require a
+    verified email without an Auth Service round-trip.
     """
     cfg = settings or get_settings()
     now = datetime.now(tz=UTC)
@@ -46,6 +50,7 @@ def create_access_token(
         "email": email,
         "role": role,
         "pwd_ts": pwd_ts,
+        "is_verified": is_verified,
         "token_type": TokenType.ACCESS.value,
         "iss": cfg.jwt_issuer,
         "aud": cfg.jwt_audience,

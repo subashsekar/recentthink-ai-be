@@ -45,6 +45,7 @@ class AIWorkflowStateModel(BaseModel):
     planner_output: PlannerOutput | None = None
     teacher_output: dict[str, Any] | None = None
     coder_output: dict[str, Any] | None = None
+    code_explainer_output: dict[str, Any] | None = None
     evaluator_output: dict[str, Any] | None = None
     token_usage: TokenUsage = Field(default_factory=TokenUsage)
     execution_time_ms: int = 0
@@ -74,6 +75,7 @@ class AIWorkflowState(TypedDict, total=False):
     llm_raw: dict[str, Any] | None
     teacher_output: dict[str, Any] | None
     coder_output: dict[str, Any] | None
+    code_explainer_output: dict[str, Any] | None
     evaluator_output: dict[str, Any] | None
     module_responses: list[dict[str, Any]]
     token_usage: dict[str, Any]

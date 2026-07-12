@@ -63,8 +63,8 @@ how to read configuration or open a database session.
 |-----------------|------|--------------------------------------------|--------------------------|
 | `gateway` | 8000 | Entry point / health. | Request routing, edge concerns. |
 | `auth_service` | 8001 | Owns User & Admin models, repositories, migrations; DB health check. | Authentication, JWT issuance. |
-| `user_service` | 8002 | Health only. | End-user profile domain. |
-| `admin_service` | 8003 | Health only. | Admin operations / RBAC. |
+| `user_service` | 8002 | User profile, avatar, public profile, learning statistics view. | Preferences / notifications. |
+| `admin_service` | 8003 | Admin dashboard, user management orchestration, audit logs, notifications (HTTP aggregation only). | Feature flags / reports export. |
 | `ai_service` | 8004 | Health only. | AI agents, RAG pipelines. |
 | `usage_service` | 8005 | Health only. | Usage metering & billing. |
 

@@ -19,6 +19,7 @@ from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.services.admin_auth_service import AdminAuthService
+from app.services.account_service import AccountService
 from app.services.auth_service import AuthService
 from app.services.email.base import EmailService
 from app.services.email.factory import build_email_service
@@ -31,7 +32,12 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from shared.exceptions.auth import ForbiddenError, InactiveUserError
+from shared.exceptions.auth import (
+    BlockedUserError,
+    ForbiddenError,
+    InactiveUserError,
+    EmailNotVerifiedError,
+)
 from shared.logging.security import log_security_event
 
 _bearer_scheme = HTTPBearer(auto_error=True)
@@ -107,6 +113,31 @@ def get_password_management_service(
     )
 
 
+def get_account_service(
+    db: Session = Depends(get_db),
+    user_repository: UserRepository = Depends(get_user_repository),
+    refresh_token_repository: RefreshTokenRepository = Depends(
+        get_refresh_token_repository,
+    ),
+    email_verification_repository: EmailVerificationRepository = Depends(
+        get_email_verification_repository,
+    ),
+    password_reset_repository: PasswordResetRepository = Depends(
+        get_password_reset_repository,
+    ),
+    password_service: PasswordService = Depends(get_password_service),
+) -> AccountService:
+    """Provide an :class:`AccountService` for the request scope."""
+    return AccountService(
+        db=db,
+        user_repository=user_repository,
+        refresh_token_repository=refresh_token_repository,
+        email_verification_repository=email_verification_repository,
+        password_reset_repository=password_reset_repository,
+        password_service=password_service,
+    )
+
+
 def get_auth_service(
     user_repository: UserRepository = Depends(get_user_repository),
     refresh_token_repository: RefreshTokenRepository = Depends(
@@ -146,14 +177,21 @@ def get_current_user(
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Return the authenticated user only when the account is active."""
+    """Return the authenticated user only when the account is usable."""
+    if current_user.is_blocked:
+        log_security_event(
+            "forbidden_access",
+            reason="blocked_user",
+            user_id=str(current_user.id),
+        )
+        raise BlockedUserError("Your account has been blocked.")
     if not current_user.is_active:
         log_security_event(
             "forbidden_access",
             reason="inactive_user",
             user_id=str(current_user.id),
         )
-        raise InactiveUserError("User account is inactive.")
+        raise InactiveUserError("Your account has been disabled.")
     return current_user
 
 
@@ -161,6 +199,27 @@ def require_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     """Require any authenticated, active user for protected user routes."""
+    return current_user
+
+
+def require_verified_user(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Require an authenticated, active user with a verified email.
+
+    Use this to protect sensitive features (billing, API keys, public profile
+    publishing, premium actions). Unverified users receive HTTP 403 with
+    ``code=EMAIL_NOT_VERIFIED``.
+    """
+    if not current_user.is_verified:
+        log_security_event(
+            "forbidden_access",
+            reason="email_not_verified",
+            user_id=str(current_user.id),
+        )
+        raise EmailNotVerifiedError(
+            "Please verify your email to access this feature.",
+        )
     return current_user
 
 

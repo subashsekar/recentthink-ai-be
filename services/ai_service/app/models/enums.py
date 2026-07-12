@@ -21,6 +21,7 @@ class AIFeature(StrEnum):
     LEETCODE = "leetcode"
     HACKERRANK = "hackerrank"
     DSA = "dsa"
+    DSA_PATTERN = "dsa_pattern"
     INTERVIEW = "interview"
     COURSE_GENERATOR = "course_generator"
 
@@ -39,6 +40,7 @@ class ModuleName(StrEnum):
     OPENROUTER = "openrouter"
     TEACHER = "teacher"
     CODER = "coder"
+    CODE_EXPLAINER = "code_explainer"
     EVALUATOR = "evaluator"
     PERSIST = "persist"
 
@@ -59,6 +61,7 @@ class AgentName(StrEnum):
     PLANNER = "planner"
     TEACHER = "teacher"
     CODER = "coder"
+    CODE_EXPLAINER = "code_explainer"
     EVALUATOR = "evaluator"
 
 

@@ -91,12 +91,15 @@ def get_admin_me(
     response_model=MessageResponse,
     responses=_ERROR_RESPONSES,
     include_in_schema=False,
+    deprecated=True,
 )
 def admin_users_placeholder(
     _current_admin: User = Depends(require_admin),
 ) -> MessageResponse:
-    """Placeholder for future user-management APIs."""
-    return MessageResponse(message="User management APIs are not yet available.")
+    """Deprecated: user management lives on Admin Service via the Gateway."""
+    return MessageResponse(
+        message="Use Admin Service endpoints via Gateway /admin/users.",
+    )
 
 
 @router.get(
@@ -104,9 +107,12 @@ def admin_users_placeholder(
     response_model=MessageResponse,
     responses=_ERROR_RESPONSES,
     include_in_schema=False,
+    deprecated=True,
 )
 def admin_management_placeholder(
     _current_super_admin: User = Depends(require_super_admin),
 ) -> MessageResponse:
-    """Placeholder for future admin-management APIs (super-admin only)."""
-    return MessageResponse(message="Admin management APIs are not yet available.")
+    """Deprecated: admin management lives on Admin Service."""
+    return MessageResponse(
+        message="Use Admin Service endpoints via Gateway.",
+    )

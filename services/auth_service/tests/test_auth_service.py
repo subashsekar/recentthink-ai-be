@@ -290,7 +290,7 @@ def test_login_inactive_user(
     user = _make_user(password_service=password_service, is_active=False)
     user_repository.get_user_by_email.return_value = user
 
-    with pytest.raises(InactiveUserError):
+    with pytest.raises(InactiveUserError, match="Your account has been disabled"):
         auth_service.login(
             LoginRequest(email="user@example.com", password="SecurePass1!"),
         )
@@ -460,7 +460,7 @@ def test_refresh_inactive_user_raises(
     refresh_token_repository.get_by_token_hash.return_value = stored
     user_repository.get_user_by_id.return_value = user
 
-    with pytest.raises(InactiveUserError):
+    with pytest.raises(InactiveUserError, match="Your account has been disabled"):
         auth_service.refresh(RefreshTokenRequest(refresh_token="inactive-token"))
 
 

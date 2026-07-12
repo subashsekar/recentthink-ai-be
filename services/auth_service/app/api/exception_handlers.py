@@ -23,6 +23,7 @@ from shared.exceptions.auth import (
     RevokedTokenError,
     UsedTokenError,
     UserNotFoundError,
+    BlockedUserError,
 )
 from shared.exceptions.base import BusinessException, DatabaseException, ValidationException
 from shared.exceptions.email import EmailDeliveryError
@@ -115,6 +116,19 @@ def register_exception_handlers(app: FastAPI) -> None:
             detail=str(exc),
         )
 
+    @app.exception_handler(BlockedUserError)
+    async def blocked_user_handler(
+        request: Request,
+        exc: BlockedUserError,
+    ) -> JSONResponse:
+        log_security_event("forbidden_access", reason="blocked", **_request_context(request))
+        logger.warning("Blocked user access attempt: %s", exc)
+        return _error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+            code="ACCOUNT_BLOCKED",
+        )
+
     @app.exception_handler(InvalidTokenError)
     async def invalid_token_handler(
         request: Request,
@@ -172,6 +186,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
+            code=exc.code or "EMAIL_NOT_VERIFIED",
         )
 
     @app.exception_handler(EmailAlreadyVerifiedError)

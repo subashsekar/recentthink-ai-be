@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from app.api.account import router as account_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.database import router as database_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
+from app.api.internal_admin import router as internal_admin_router
 from app.core.config import SERVICE_NAME
 from app.core.rate_limit import limiter
 from fastapi import FastAPI
@@ -67,7 +69,9 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(database_router)
 app.include_router(auth_router)
+app.include_router(account_router)
 app.include_router(admin_router)
+app.include_router(internal_admin_router)
 
 # Service name available for logging and monitoring context.
 app.state.service_name = SERVICE_NAME

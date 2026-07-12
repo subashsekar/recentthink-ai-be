@@ -19,6 +19,6 @@ async def usage_catchall(request: Request, path: str):
         request,
         upstream_client=request.app.state.usage_client,
         upstream_path=f"/usage/{path}",
+        service_name="usage",
         stream=should_stream(request),
     )
-

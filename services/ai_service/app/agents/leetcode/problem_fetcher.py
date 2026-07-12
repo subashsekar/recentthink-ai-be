@@ -15,6 +15,7 @@ from shared.logging import get_logger
 logger = get_logger(__name__)
 
 LEETCODE_GRAPHQL_URL = "https://leetcode.com/graphql"
+_MIN_DESCRIPTION_LEN = 40
 
 QUESTION_QUERY = """
 query questionContent($titleSlug: String!) {
@@ -103,6 +104,21 @@ class LeetCodeProblemFetcher:
             for item in parsed_examples
         ]
         description = html_to_text(raw_html)
+        if len(description.strip()) < _MIN_DESCRIPTION_LEN:
+            logger.info(
+                "LeetCode returned insufficient content for slug=%s (len=%d); likely premium or locked",
+                slug,
+                len(description.strip()),
+            )
+            return ProblemFetchResult(
+                success=False,
+                error=(
+                    "Could not retrieve the full problem statement from LeetCode. "
+                    "This may be a Premium (subscription) problem, or LeetCode did not return "
+                    "the content. Please paste the problem statement manually."
+                ),
+            )
+
         topics = [tag["name"] for tag in question.get("topicTags") or [] if tag.get("name")]
 
         problem = ProblemData(

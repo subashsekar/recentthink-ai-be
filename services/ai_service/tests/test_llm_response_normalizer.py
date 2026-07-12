@@ -52,6 +52,39 @@ def test_is_llm_response_empty_detects_blank_payload() -> None:
     ) is False
 
 
+def test_dsa_pattern_empty_shells_are_empty() -> None:
+    from app.agents.shared.llm_response_normalizer import (
+        feature_payload_missing_content,
+        normalize_unified_llm_payload,
+    )
+
+    hollow = normalize_unified_llm_payload(
+        {
+            "teacher": {},
+            "coder": {},
+            "dsa_pattern": {
+                "overview": {"pattern": "", "definition": ""},
+                "recognition": {"keywords": [], "checklist": []},
+                "next_pattern_recommendation": {"prerequisites_met": True},
+            },
+        },
+        planner_metadata={"learning_objectives": ["from planner"]},
+    )
+    # Planner-enriched teacher must not mask missing dsa_pattern content.
+    assert feature_payload_missing_content("dsa_pattern", hollow) is True
+
+
+def test_dsa_pattern_with_definition_is_not_empty() -> None:
+    from app.agents.shared.llm_response_normalizer import feature_payload_missing_content
+
+    payload = {
+        "dsa_pattern": {
+            "overview": {"definition": "Halve the search space each step."},
+        },
+    }
+    assert feature_payload_missing_content("dsa_pattern", payload) is False
+
+
 def test_normalize_enriches_teacher_from_planner_metadata() -> None:
     payload = normalize_unified_llm_payload(
         {"teacher": {}, "coder": {}, "evaluator": {}},

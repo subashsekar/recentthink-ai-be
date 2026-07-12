@@ -29,3 +29,4 @@ limiter = Limiter(
 
 LOGIN_RATE_LIMIT: str = _settings.rate_limit_login
 REGISTER_RATE_LIMIT: str = _settings.rate_limit_register
+ACCOUNT_RATE_LIMIT: str = _settings.rate_limit_account

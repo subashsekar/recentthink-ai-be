@@ -2,7 +2,7 @@
 
 Production-ready reusable AI platform built on FastAPI, LangGraph, and OpenRouter.
 
-Phase 2.5 consolidates **LeetCode** as the reference implementation for all future AI products. LeetCode is a thin adapter over the shared `AIWorkflowEngine` — exactly **one OpenRouter request** per analyze.
+Phase 6 adds **DSA Pattern Coach** as the fourth AI product on the shared platform. LeetCode Mentor, HackerRank Mentor, Learning Path Generator, and DSA Pattern Coach are thin adapters over the shared `AIWorkflowEngine` — exactly **one OpenRouter request** per generate/analyze.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ Phase 2.5 consolidates **LeetCode** as the reference implementation for all futu
 User
   │
   ▼
-LeetCode Adapter (validate URL, fetch problem, normalize context)
+Feature Adapter (LeetCode / HackerRank / Course Generator / DSA Pattern Coach)
   │
   ▼
 Planner (deterministic — no LLM)
@@ -19,7 +19,7 @@ Planner (deterministic — no LLM)
 AIWorkflowEngine / OpenRouter (single structured JSON call)
   │
   ▼
-Teacher Module → Coder Module → Evaluator Module (format only — no LLM)
+Teacher → Coder → Code Explainer → Evaluator (format only — no LLM)
   │
   ▼
 Conversation Memory → History → Execution Trace → Usage Tracker → Progress
@@ -28,35 +28,48 @@ Conversation Memory → History → Execution Trace → Usage Tracker → Progre
 Frontend
 ```
 
-### LeetCode Adapter
+### DSA Pattern Coach Adapter
 
-Location: `app/agents/leetcode/`
+Location: `app/agents/dsa_pattern/`
+
+Unlike LeetCode/HackerRank (problem-centric), this module is **pattern-centric**. The user provides only a DSA pattern name (e.g. Sliding Window) plus level, language, and learning style.
 
 | Component | Responsibility |
 |-----------|----------------|
-| `problem_fetcher.py` | LeetCode GraphQL fetch + manual input |
-| `adapter.py` | Maps platform `ChatResponse` → LeetCode API schemas |
+| `schemas.py` | Generate/follow-up/progress/export API models |
+| `adapter.py` | Maps platform `ChatResponse` → pattern schemas + export helpers |
 | `service.py` | Thin orchestration — delegates to `AIPlatformService` |
-| `router.py` | `/leetcode/*` endpoints (mounted in `main.py`) |
+| `router.py` | `/dsa-pattern/*` endpoints (mounted in `main.py`) |
+| `agents.py` | Declarative specs (learning/recognition/visualization/… are logical, not extra LLM calls) |
+| `catalog.py` | Example pattern cards |
 
-LeetCode does **not** implement its own agents, prompts, memory, history, or usage tracking.
+DSA Pattern Coach does **not** implement its own workflow, memory, history, or usage tracking.
 
-### Follow-up Flow (LeetCode)
+### Learning Workflow
 
-```
-POST /leetcode/follow-up  (or POST /ai/follow-up)
-  │
-  ├── Load session memory (planner + teacher context)
-  ├── FollowUpEngine (classify intent)
-  ├── OpenRouter (targeted follow-up prompt)
-  ├── TeacherModule (format response)
-  └── Update conversation memory
-```
+1. Validate inputs (`pattern`, `level`, `language`, `learning_style`).
+2. Pattern Planner builds category, difficulty, prerequisites, study time, objectives, roadmap (**0 LLM calls**).
+3. **One** OpenRouter call returns `teacher` + `dsa_pattern` JSON.
+4. Logical stages parsed from that JSON: Learning → Recognition → Visualization → Template → Walkthrough → Practice → Quiz.
+5. Progress Coach updates `pattern_progress` / `pattern_mastery`.
+6. Follow-ups reuse Conversation Memory (`Explain again`, `Generate another quiz`, `Compare patterns`, etc.).
+
+### Recognition Strategy
+
+The Recognition Agent teaches **how to identify** whether a problem belongs to the pattern:
+
+- Keywords (e.g. Sliding Window → continuous, substring, subarray, window)
+- Signals, recognition rules, decision tree
+- Common clues + detection checklist
+
+### Visualization
+
+Frontend-friendly ASCII diagrams, pointer/step movement, array/graph/tree/stack/queue evolution — all plain text suitable for UI rendering.
 
 ## LangGraph Workflow
 
 ```
-START → planner → openrouter → teacher → coder → evaluator → persist → END
+START → planner → openrouter → teacher → coder → code_explainer → evaluator → persist → END
 ```
 
 | Node | Responsibility | LLM Calls |
@@ -65,102 +78,21 @@ START → planner → openrouter → teacher → coder → evaluator → persist
 | **OpenRouter** | Single structured JSON completion | 1 |
 | **Teacher** | Format teacher JSON → markdown + frontend cards | 0 |
 | **Coder** | Format coder JSON → code blocks | 0 |
+| **Code Explainer** | Explain code line-by-line from structured JSON | 0 |
 | **Evaluator** | Format evaluator JSON → feedback | 0 |
 | **Persist** | Update session, memory, usage | 0 |
 
-## Teacher Module
+For DSA Pattern Coach, planner selects only `TEACHER`. Learning/recognition/visualization/template/walkthrough/practice/quiz content is produced inside the single OpenRouter `dsa_pattern` object.
 
-Location: `app/agents/shared/teacher/`
+## Database Design
 
-The Teacher Module reads structured JSON from OpenRouter and **never calls OpenRouter itself**. It behaves like a mentor — guiding learners without immediately revealing complete solutions.
-
-### Output Fields
-
-| Field | Description |
-|-------|-------------|
-| `problem_summary` | High-level problem overview |
-| `thinking_process` | Step-by-step reasoning guidance |
-| `learning_objectives` | What the learner should take away |
-| `concepts` | DSA concepts involved |
-| `approach` | Strategic approach (not full solution) |
-| `common_mistakes` | Beginner pitfalls to avoid |
-| `analogy` | Real-world analogy |
-| `next_step` | Recommended next action for the learner |
-
-### Example Structured Output
-
-```json
-{
-  "problem_summary": "Find two numbers that add up to a target.",
-  "thinking_process": "Consider what you need at each step...",
-  "concepts": ["Hash Map"],
-  "approach": "Store complements as you iterate.",
-  "common_mistakes": ["Nested loops"],
-  "analogy": "Like finding a matching sock in a laundry basket.",
-  "next_step": "Think about storing previous values."
-}
-```
-
-The `TeacherFormatter` produces both **markdown** (for chat display) and **frontend cards** (for structured UI).
-
-## Conversation Memory
-
-Location: `app/agents/shared/memory/` and `app/services/memory/`
-
-### Memory Strategy
-
-| Layer | Storage | Purpose |
-|-------|---------|---------|
-| **Recent Memory** | `recent_messages` (JSONB) | Last N exchanges for follow-up context |
-| **Long-Term Memory** | `previous_responses` (JSONB) | Historical assistant responses |
-| **Conversation Summary** | `summary` (text) | Compressed context for token optimization |
-
-When conversations grow large, the summarizer (`POST /ai/session/{id}/summarize`) generates a summary, stores it, and the `ContextPruner` reduces token usage by trimming recent messages and context.
-
-### Database: `conversation_memory`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `session_id` | UUID | FK to `ai_sessions` (unique) |
-| `user_id` | UUID | Owner for isolation |
-| `summary` | text | Conversation summary |
-| `context` | JSONB | Planner output, teacher output, problem context |
-| `recent_messages` | JSONB | Recent user/assistant exchanges |
-| `previous_responses` | JSONB | Long-term response history |
-| `follow_up_questions` | JSONB | Suggested follow-ups |
-| `memory_version` | int | Schema version for future migrations |
-| `created_at` / `updated_at` | timestamp | Audit fields |
-
-## Follow-up Engine
-
-Location: `app/agents/shared/followup/`
-
-Recognizes intents such as:
-
-- Explain again / easier / visually
-- Give another example
-- Simplify / edge cases
-- "I didn't understand"
-
-Reuses existing planner and teacher context — does not regenerate unrelated content.
-
-## Prompt Management
-
-Location: `app/prompts/`
-
-| Path | Purpose |
-|------|---------|
-| `leetcode/v1/single_llm.txt` | LeetCode single-LLM orchestration (OpenRouter) |
-| `leetcode/v1/planner.md` | Deterministic planner documentation |
-| `leetcode/v1/teacher.md` | Teacher module formatting reference |
-| `leetcode/v1/coder.md` | Coder module formatting reference |
-| `leetcode/v1/evaluator.md` | Evaluator module formatting reference |
-| `teacher/v1/system.md` | Mentor behavior and follow-up JSON schema |
-| `teacher/v1/followup.md` | Follow-up question handling |
-| `shared/v1/single_llm.txt` | Generic fallback orchestration prompt |
-
-Prompts support versioning via `PromptLoader` (filesystem + DB overrides + hot reload). Never hardcode prompts in code.
+| Table | Purpose |
+|-------|---------|
+| `pattern_sessions` | Generated pattern lesson + JSONB sections |
+| `pattern_progress` | Per-user aggregates (learned/mastered, streak, quiz scores) |
+| `pattern_mastery` | Per-user per-pattern mastery status |
+| `pattern_bookmarks` | Bookmarked recognition/examples/templates |
+| `ai_sessions` / `ai_messages` / `conversation_memory` | Shared history + memory (reused) |
 
 ## API Endpoints
 
@@ -170,76 +102,68 @@ Prompts support versioning via `PromptLoader` (filesystem + DB overrides + hot r
 |--------|------|------|-------------|
 | POST | `/ai/chat` | JWT | Run the generic AI pipeline |
 | POST | `/ai/follow-up` | JWT | Handle follow-up using session context |
-| POST | `/ai/session/{id}/summarize` | JWT | Generate conversation summary |
-| DELETE | `/ai/memory/{session_id}` | JWT | Clear conversation memory |
 | GET | `/ai/history` | JWT | List session history |
-| GET | `/ai/history/{session_id}` | JWT | Session detail with memory + teacher responses |
-| DELETE | `/ai/history/{session_id}` | JWT | Delete a session |
 | GET | `/ai/models` | JWT | List configured LLM models |
 
-### LeetCode (`/leetcode/*`)
+### LeetCode (`/leetcode/*`) / HackerRank (`/hackerrank/*`) / Courses (`/courses/*`)
+
+See product routers for analyze/generate, follow-up, history, progress, examples, export.
+
+### DSA Pattern Coach (`/dsa-pattern/*`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/leetcode/analyze` | JWT | Fetch problem + run single-LLM workflow |
-| POST | `/leetcode/follow-up` | JWT | Follow-up in existing LeetCode session |
-| GET | `/leetcode/history` | JWT | LeetCode session history |
-| GET | `/leetcode/history/{session_id}` | JWT | Session detail with messages |
-| DELETE | `/leetcode/history/{session_id}` | JWT | Delete session |
-| GET | `/leetcode/progress` | JWT | Practice progress stats |
+| POST | `/dsa-pattern/generate` | JWT | Generate full pattern lesson (1 OpenRouter call) |
+| POST | `/dsa-pattern/follow-up` | JWT | Continue session (explain / more examples / quiz / compare) |
+| GET | `/dsa-pattern/history` | JWT | List pattern sessions |
+| GET | `/dsa-pattern/history/{session_id}` | JWT | Detail + messages |
+| DELETE | `/dsa-pattern/history/{session_id}` | JWT | Delete pattern session + AI session |
+| GET | `/dsa-pattern/progress` | JWT | Aggregate + mastery |
+| POST | `/dsa-pattern/progress` | JWT | Update practice/quiz/mastery |
+| GET | `/dsa-pattern/dashboard` | JWT | Progress + recent/active sessions |
+| GET | `/dsa-pattern/examples` | JWT | Example pattern cards |
+| POST | `/dsa-pattern/export/markdown` | JWT | Export as Markdown |
+| POST | `/dsa-pattern/export/json` | JWT | Export as JSON |
+| POST | `/dsa-pattern/export/pdf` | JWT | Export as PDF |
 
-### GET `/ai/history/{session_id}` Response
+### Example generate request
 
-Returns session metadata, messages, conversation memory snapshot, teacher responses, and follow-up messages.
+```json
+{
+  "pattern": "Sliding Window",
+  "level": "Beginner",
+  "language": "Python",
+  "learning_style": "Visual"
+}
+```
 
-## Session Continuation
+### Frontend response highlights
 
-Pass the same `session_id` on `POST /ai/chat` or use `POST /ai/follow-up` for targeted questions:
-
-- "Explain again"
-- "Give another example"
-- "I didn't understand"
-- "What about edge cases?"
-
-Memory loads planner and teacher output from prior turns, avoiding full replanning when possible.
+Pattern Overview, Mental Model, Recognition Guide, Visualization, Templates, Easy/Medium/Hard Examples, Interview Tips, Practice Problems, Quiz, Progress, Usage, Execution Trace.
 
 ## Security
 
-- JWT authentication on all `/ai/*` endpoints
-- RBAC with admin override for history access
-- Owner validation on session and memory operations
-- Memory isolation between users
-- Prompt injection sanitization
-- API keys and JWTs never logged
-
-## Usage Tracking
-
-Tracks follow-up requests, memory retrieval, token usage, execution time, latency, and estimated cost via `UsageTracker` → Usage Service + `model_usage` table.
+- JWT authentication on all `/dsa-pattern/*` endpoints
+- RBAC with owner validation on session access
+- Prompt injection sanitization (shared workflow)
+- Rate limits: generate `5/minute`, follow-up `20/minute`
 
 ## Directory Structure
 
 ```
 app/
 ├── agents/
-│   ├── leetcode/           # Reference adapter (fetch, map, progress)
-│   └── shared/
-│       ├── teacher/        # Formatter, schemas, module
-│       ├── memory/         # Engine, pruner, summarizer
-│       ├── followup/       # Intent classification engine
-│       ├── planner/        # Deterministic request planner
-│       ├── workflow/       # LangGraph engine + nodes
-│       └── orchestrator/   # Platform orchestrator
+│   ├── leetcode/           # Problem mentor adapter
+│   ├── hackerrank/         # Challenge mentor adapter
+│   ├── course_generator/   # Learning Path Generator adapter
+│   ├── dsa_pattern/        # DSA Pattern Coach adapter
+│   └── shared/             # Workflow, planner, teacher, memory, follow-up
 ├── prompts/
-│   ├── leetcode/v1/        # LeetCode prompts (single_llm + module docs)
-│   ├── teacher/v1/         # Teacher prompts (system, followup, analogy, summary)
-│   └── shared/v1/          # Single-LLM orchestration prompt
-├── services/
-│   ├── memory/             # ConversationMemoryService
-│   ├── followup/           # FollowUpService
-│   ├── history/            # HistoryManager
-│   └── usage/              # UsageTracker
-├── api/ai.py               # Platform HTTP routes
-└── main.py                 # Mounts /ai and /leetcode routers
+│   ├── leetcode/v1/
+│   ├── course_generator/v1/single_llm.txt
+│   ├── dsa_pattern/v1/single_llm.txt
+│   └── shared/v1/
+└── main.py                 # Mounts /ai, /leetcode, /hackerrank, /courses, /dsa-pattern
 ```
 
 ## Running
@@ -256,26 +180,20 @@ cd services/ai_service && uv run uvicorn app.main:app --reload --port 8004
 uv run alembic upgrade head
 ```
 
-Sprint 3 adds `g9b4c5d6e7f8_extend_conversation_memory` (summary, recent_messages, memory_version).
+- Phase 5: `l3g8b9c0d1e2_add_course_generator_tables`
+- Phase 6: `m4h9c0d1e2f3_add_dsa_pattern_tables` (`pattern_sessions`, `pattern_progress`, `pattern_mastery`, `pattern_bookmarks`)
 
 ## Testing
 
 ```bash
 cd services/ai_service
-uv run pytest tests/ -q --cov=app --cov-config=.coveragerc \
-  --override-ini="addopts=-ra --strict-markers --strict-config --import-mode=importlib"
+uv run pytest tests/test_dsa_pattern_api.py tests/test_dsa_pattern_adapter.py -q
 ```
 
-Platform coverage target: **>90%**.
+## AI Products
 
-## Future AI Products
-
-Each product adds feature-specific logic under `agents/{feature}/` and automatically inherits the shared workflow, memory, follow-up, history, usage, and execution trace:
-
-- **LeetCode Mentor** — reference implementation (`agents/leetcode/`)
-- **HackerRank Mentor** — challenge fetcher adapter
-- **DSA Tutor** — curriculum-aware teaching
-- **Interview Trainer** — mock interview flows
-- **Course Generator** — syllabus generation
-
-Legacy `leetcode_sessions`, `chat_messages`, and `agent_runs` tables were removed in migration `h9c4d5e6f7a8`. All sessions use `ai_sessions`, `ai_messages`, and `agent_execution`.
+- **LeetCode Mentor** — `agents/leetcode/`
+- **HackerRank Mentor** — `agents/hackerrank/`
+- **Learning Path Generator** — `agents/course_generator/`
+- **DSA Pattern Coach** — `agents/dsa_pattern/` (flagship pattern-centric learning)
+- **Interview Trainer** — scaffold for a future product

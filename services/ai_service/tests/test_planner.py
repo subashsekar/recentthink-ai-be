@@ -46,6 +46,29 @@ def test_classify_message(planner: Planner) -> None:
 
 def test_resolve_feature_alias() -> None:
     assert Planner.resolve_feature_alias("dsa_tutor") == AIFeature.DSA
+    assert Planner.resolve_feature_alias("dsa_pattern") == AIFeature.DSA_PATTERN
+    assert Planner.resolve_feature_alias("dsa-pattern") == AIFeature.DSA_PATTERN
+
+
+def test_plan_dsa_pattern_modules(planner: Planner) -> None:
+    request = ChatRequest(
+        feature=AIFeature.DSA_PATTERN,
+        message="Teach Sliding Window",
+        context={
+            "pattern": "Sliding Window",
+            "level": "Beginner",
+            "language": "Python",
+            "learning_style": "Visual",
+        },
+    )
+    output = planner.plan(request)
+    assert output.feature == AIFeature.DSA_PATTERN
+    assert output.modules == [ModuleName.TEACHER]
+    assert ModuleName.CODER not in output.modules
+    assert output.metadata["pattern"] == "Sliding Window"
+    assert output.metadata["estimated_study_time"]
+    assert len(output.metadata["learning_objectives"]) >= 3
+    assert len(output.metadata["execution_plan"]) >= 3
 
 
 def test_plan_leetcode_metadata_from_context(planner: Planner) -> None:

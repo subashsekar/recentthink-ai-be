@@ -19,7 +19,8 @@ make docker-up
 
 | Check | URL |
 |-------|-----|
-| Gateway health | http://localhost:8000/ |
+| Gateway liveness | http://localhost:8000/ |
+| Gateway readiness (all services) | http://localhost:8000/health |
 | Gateway docs | http://localhost:8000/docs |
 | Auth (direct) | http://localhost:8001/docs |
 

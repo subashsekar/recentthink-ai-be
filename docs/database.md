@@ -69,7 +69,7 @@ class RefreshToken(CreatedAtModel, Base):
 
 | Table | Purpose | Key columns |
 |-------------------------------|--------------------------------------|-----------------------------------------------|
-| `users` | Identity/credentials | `id` (UUID PK), `email` (unique), `password_hash`, `role`, `is_verified`, `is_active` |
+| `users` | Identity/credentials | `id` (UUID PK), `email` (unique), `password_hash`, `role`, `is_verified`, `is_active`, `disabled_at`, `deleted_at` (reserved), `password_changed_at` |
 | `admins` | Administrator accounts | `id` (UUID PK), `email` (unique), ... |
 | `refresh_tokens` | Long-lived session tokens | FK `user_id` (CASCADE, indexed), `token` (indexed), `expires_at`, `is_revoked` |
 | `email_verification_tokens` | One-time email confirmation | FK `user_id` (CASCADE, indexed), `token` (unique), `expires_at`, `is_used` |
@@ -83,6 +83,23 @@ relies on the unique constraint's implicit index (no separate `index=True`).
 Deleting a `User` cascades to all related token rows via
 `relationship(cascade="all, delete-orphan")` on the ORM side and
 `ON DELETE CASCADE` on the database foreign keys.
+
+## User profile schema (`user_service`)
+
+`user_service` owns profile presentation. Identity stays in Auth's `users`
+table; profile rows reference it:
+
+| Table | Purpose | Key columns |
+|----------------|----------------------------------|-----------------------------------------------|
+| `user_profiles` | Profile, platforms, avatar URL | `id`, `user_id` (FK → `users.id` CASCADE, unique), `username` (unique public handle), professional fields, platform usernames, `profile_picture_url` |
+
+Avatar binaries are stored via `shared.storage` (local for development,
+Supabase bucket `recenthink_user_profile_picture` for deployment); only the URL
+is persisted. Learning statistics are **read** from AI-owned progress tables
+(`leetcode_progress`, `hackerrank_progress`, `course_progress`,
+`pattern_progress`) and are never duplicated in `user_profiles`.
+
+Migration: `n5i0d1e2f3g4_add_user_profiles`.
 
 ## Schemas: DB layer vs. API layer
 

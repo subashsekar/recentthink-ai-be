@@ -50,11 +50,75 @@ def _coder_has_content(coder: dict[str, Any]) -> bool:
     return False
 
 
+def _has_meaningful_values(value: Any) -> bool:
+    """True when value contains non-empty strings/lists (ignores hollow nested dicts)."""
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(_has_meaningful_values(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_meaningful_values(item) for item in value.values())
+    # Ignore bools/numbers — schema defaults like prerequisites_met=True are not content.
+    return False
+
+
+def _course_has_content(course: dict[str, Any]) -> bool:
+    if _has_meaningful_values(course.get("overview")):
+        return True
+    for key in ("roadmap", "lessons", "quizzes", "assignments", "projects", "assessments", "resources"):
+        if _has_meaningful_values(course.get(key)):
+            return True
+    if _has_meaningful_values(course.get("learning_tips")) or _has_meaningful_values(
+        course.get("next_recommendations"),
+    ):
+        return True
+    return False
+
+
+def _dsa_pattern_has_content(pattern: dict[str, Any]) -> bool:
+    """True when dsa_pattern has real lesson text — empty {} shells do not count."""
+    for key in (
+        "overview",
+        "recognition",
+        "mental_model",
+        "visualization",
+        "practice",
+        "quiz",
+        "interview_tips",
+        "next_pattern_recommendation",
+        "easy_example",
+        "medium_example",
+        "hard_example",
+    ):
+        if _has_meaningful_values(pattern.get(key)):
+            return True
+    for key in ("templates", "pattern_comparison", "common_mistakes"):
+        if _has_meaningful_values(pattern.get(key)):
+            return True
+    return False
+
+
 def is_llm_response_empty(payload: dict[str, Any]) -> bool:
-    """Return True when teacher and coder sections lack usable content."""
+    """Return True when teacher, coder, course, and dsa_pattern lack usable content."""
     teacher = _as_dict(payload.get("teacher"))
     coder = _as_dict(payload.get("coder"))
-    return not _teacher_has_content(teacher) and not _coder_has_content(coder)
+    course = _as_dict(payload.get("course"))
+    dsa_pattern = _as_dict(payload.get("dsa_pattern"))
+    return (
+        not _teacher_has_content(teacher)
+        and not _coder_has_content(coder)
+        and not _course_has_content(course)
+        and not _dsa_pattern_has_content(dsa_pattern)
+    )
+
+
+def feature_payload_missing_content(feature: str, payload: dict[str, Any]) -> bool:
+    """Feature-specific emptiness (ignores planner-enriched teacher stubs)."""
+    if feature in {"dsa_pattern", "dsa-pattern", "pattern_coach"}:
+        return not _dsa_pattern_has_content(_as_dict(payload.get("dsa_pattern")))
+    if feature in {"course_generator", "course-generator", "learning_path"}:
+        return not _course_has_content(_as_dict(payload.get("course")))
+    return is_llm_response_empty(payload)
 
 
 def _normalize_solution(
@@ -142,6 +206,51 @@ def _normalize_evaluator(evaluator: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_course(course: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(course)
+    for key in (
+        "roadmap",
+        "lessons",
+        "quizzes",
+        "assignments",
+        "projects",
+        "assessments",
+        "resources",
+        "learning_tips",
+        "next_recommendations",
+    ):
+        if key not in normalized or normalized[key] is None:
+            normalized[key] = []
+    if not isinstance(normalized.get("overview"), dict):
+        normalized["overview"] = _as_dict(normalized.get("overview"))
+    if not isinstance(normalized.get("adaptive"), dict):
+        normalized["adaptive"] = _as_dict(normalized.get("adaptive"))
+    return normalized
+
+
+def _normalize_dsa_pattern(pattern: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(pattern)
+    for key in (
+        "overview",
+        "mental_model",
+        "recognition",
+        "visualization",
+        "easy_example",
+        "medium_example",
+        "hard_example",
+        "interview_tips",
+        "practice",
+        "quiz",
+        "next_pattern_recommendation",
+    ):
+        if not isinstance(normalized.get(key), dict):
+            normalized[key] = _as_dict(normalized.get(key))
+    for key in ("templates", "common_mistakes", "pattern_comparison"):
+        if key not in normalized or normalized[key] is None:
+            normalized[key] = []
+    return normalized
+
+
 def normalize_unified_llm_payload(
     payload: dict[str, Any],
     *,
@@ -152,4 +261,6 @@ def normalize_unified_llm_payload(
         "teacher": _normalize_teacher(_as_dict(payload.get("teacher")), planner_metadata),
         "coder": _normalize_coder(_as_dict(payload.get("coder"))),
         "evaluator": _normalize_evaluator(_as_dict(payload.get("evaluator"))),
+        "course": _normalize_course(_as_dict(payload.get("course"))),
+        "dsa_pattern": _normalize_dsa_pattern(_as_dict(payload.get("dsa_pattern"))),
     }

@@ -1,4 +1,8 @@
-"""Gateway reverse-proxy routes for the AI Service."""
+"""Gateway reverse-proxy routes for the AI Service.
+
+Catch-all prefixes keep the gateway free of AI business-route duplication.
+New AI endpoints under these prefixes work without gateway code changes.
+"""
 
 from __future__ import annotations
 
@@ -9,106 +13,85 @@ from app.proxy.streaming import should_stream
 
 router = APIRouter(tags=["ai-proxy"])
 
+_AI_PREFIXES: tuple[str, ...] = (
+    "leetcode",
+    "hackerrank",
+    "courses",
+    "dsa-pattern",
+    "ai",
+)
 
-@router.post("/leetcode/analyze")
-async def leetcode_analyze(request: Request):
-    return await proxy_to_upstream(
+
+def _proxy_ai(request: Request, prefix: str, path: str):
+    upstream_path = f"/{prefix}/{path}" if path else f"/{prefix}"
+    return proxy_to_upstream(
         request,
         upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/analyze",
+        upstream_path=upstream_path,
+        service_name="ai",
         stream=should_stream(request),
     )
 
 
-@router.post("/leetcode/follow-up")
-async def leetcode_follow_up(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/follow-up",
-        stream=should_stream(request),
-    )
+@router.api_route(
+    "/leetcode",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/leetcode/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def leetcode_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "leetcode", path)
 
 
-@router.get("/leetcode/history")
-async def leetcode_history(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/history",
-    )
+@router.api_route(
+    "/hackerrank",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/hackerrank/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def hackerrank_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "hackerrank", path)
 
 
-@router.get("/leetcode/history/{session_id}")
-async def leetcode_history_session(request: Request, session_id: str):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path=f"/leetcode/history/{session_id}",
-    )
+@router.api_route(
+    "/courses",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/courses/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def courses_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "courses", path)
 
 
-@router.patch("/leetcode/history/{session_id}")
-async def leetcode_update_session(request: Request, session_id: str):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path=f"/leetcode/history/{session_id}",
-    )
+@router.api_route(
+    "/dsa-pattern",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/dsa-pattern/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def dsa_pattern_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "dsa-pattern", path)
 
 
-@router.delete("/leetcode/history/{session_id}")
-async def leetcode_delete_session(request: Request, session_id: str):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path=f"/leetcode/history/{session_id}",
-    )
+@router.api_route(
+    "/ai",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/ai/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def ai_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "ai", path)
 
 
-@router.get("/leetcode/progress")
-async def leetcode_progress(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/progress",
-    )
-
-
-@router.get("/leetcode/modes")
-async def leetcode_modes(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/modes",
-    )
-
-
-@router.get("/leetcode/examples")
-async def leetcode_examples(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/leetcode/examples",
-    )
-
-
-@router.get("/ai/models")
-async def ai_models(request: Request):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path="/ai/models",
-    )
-
-
-# Future-proofing: allow new AI endpoints without adding gateway code.
-@router.api_route("/ai/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-async def ai_catchall(request: Request, path: str):
-    return await proxy_to_upstream(
-        request,
-        upstream_client=request.app.state.ai_client,
-        upstream_path=f"/ai/{path}",
-        stream=should_stream(request),
-    )
-
+# Keep tuple exported for startup / docs introspection.
+__all__ = ["router", "_AI_PREFIXES"]

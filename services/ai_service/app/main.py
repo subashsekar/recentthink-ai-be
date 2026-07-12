@@ -8,6 +8,10 @@ from contextlib import asynccontextmanager
 from app.api.ai import router as ai_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
+from app.api.internal_admin import router as internal_admin_router
+from app.agents.course_generator.router import router as course_generator_router
+from app.agents.dsa_pattern.router import router as dsa_pattern_router
+from app.agents.hackerrank.router import router as hackerrank_router
 from app.agents.leetcode.router import router as leetcode_router
 from app.core.config import SERVICE_NAME
 from app.core.rate_limit import limiter
@@ -18,7 +22,7 @@ from shared.config import get_settings
 from shared.middleware.request_id import RequestIdMiddleware
 from shared.monitoring.sentry import init_sentry
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 
 @asynccontextmanager
@@ -52,5 +56,9 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(ai_router)
 app.include_router(leetcode_router)
+app.include_router(hackerrank_router)
+app.include_router(course_generator_router)
+app.include_router(dsa_pattern_router)
+app.include_router(internal_admin_router)
 
 app.state.service_name = SERVICE_NAME

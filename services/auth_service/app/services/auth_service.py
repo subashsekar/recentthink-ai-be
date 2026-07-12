@@ -25,7 +25,7 @@ from app.services.password_service import PasswordService
 
 from shared.exceptions import DuplicateEmailError
 from shared.exceptions.auth import (
-    EmailNotVerifiedError,
+    BlockedUserError,
     ExpiredTokenError,
     ForbiddenError,
     InactiveUserError,
@@ -112,24 +112,14 @@ class AuthService:
             )
             raise ForbiddenError("Admin privileges required.")
 
-        if not user.is_active:
-            logger.warning("Login failed for email=%s: inactive user", request.email)
-            raise InactiveUserError("User account is inactive.")
-
-        if not user.is_verified:
-            logger.warning(
-                "Login failed for email=%s: email not verified",
-                request.email,
-            )
-            raise EmailNotVerifiedError(
-                "Please verify your email address before logging in.",
-            )
+        self._ensure_account_accessible(user)
 
         access_token = self._jwt.create_access_token(
             user_id=user.id,
             email=user.email,
             role=user.role,
             password_changed_at=user.password_changed_at,
+            is_verified=user.is_verified,
         )
         refresh_token = self._jwt.generate_refresh_token()
         expires_at = self._jwt.get_refresh_token_expiry()
@@ -191,9 +181,7 @@ class AuthService:
             logger.warning("Refresh failed: user not found id=%s", stored.user_id)
             raise UserNotFoundError("User not found.")
 
-        if not user.is_active:
-            logger.warning("Refresh failed: inactive user id=%s", user.id)
-            raise InactiveUserError("User account is inactive.")
+        self._ensure_account_accessible(user)
 
         if required_roles is not None and user.role not in required_roles:
             logger.warning(
@@ -220,6 +208,7 @@ class AuthService:
             email=user.email,
             role=user.role,
             password_changed_at=user.password_changed_at,
+            is_verified=user.is_verified,
         )
 
         logger.info("Token refreshed for user id=%s", user.id)
@@ -262,6 +251,24 @@ class AuthService:
 
         self._reject_if_stale(payload, user)
         return user
+
+    @staticmethod
+    def _ensure_account_accessible(user: User) -> None:
+        """Reject login/refresh when the account is blocked or self-disabled."""
+        if user.is_blocked:
+            logger.warning(
+                "Access denied: blocked user id=%s email=%s",
+                user.id,
+                user.email,
+            )
+            raise BlockedUserError("Your account has been blocked.")
+        if not user.is_active:
+            logger.warning(
+                "Access denied: inactive user id=%s email=%s",
+                user.id,
+                user.email,
+            )
+            raise InactiveUserError("Your account has been disabled.")
 
     def _reject_if_stale(self, payload: dict[str, object], user: User) -> None:
         """Reject an access token issued before the user's last password change."""

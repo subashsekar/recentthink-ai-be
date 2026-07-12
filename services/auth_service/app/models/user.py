@@ -53,11 +53,39 @@ class User(TimestampedModel, Base):
         server_default="false",
         nullable=False,
     )
+    # Set when the user completes email verification; null until then.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         server_default="true",
         nullable=False,
+    )
+    # Set when the user disables their account (``is_active=False``). Cleared
+    # when the user re-enables via ``POST /account/enable``.
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # Admin-only force lock. Independent of ``is_active`` / self-disable.
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+    blocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    blocked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Reserved for a future soft-delete flow; hard delete still removes the row.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     # Timestamp of the last password change. Embedded (as epoch seconds) in the
     # ``pwd_ts`` claim of every access token; tokens minted before this instant

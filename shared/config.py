@@ -109,6 +109,9 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_login: str = "5/minute"
     rate_limit_register: str = "5/minute"
+    rate_limit_account: str = "5/minute"
+    # One resend every 60 seconds (slowapi ``1/minute``).
+    rate_limit_resend_verification: str = "1/minute"
 
     # --- Super Admin seeding ----------------------------------------------
     # When all four values are set and no SUPER_ADMIN user exists yet, the
@@ -192,6 +195,28 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.5-flash"
     openrouter_timeout_seconds: int = 120
 
+    # --- File storage -----------------------------------------------------
+    # Backend used for avatars and other binary uploads. Binary content is
+    # never stored in PostgreSQL — only the resulting public URL is persisted.
+    # Use ``local`` for development; ``supabase`` for deployed environments.
+    storage_backend: str = "local"
+    storage_local_path: str = "storage"
+    storage_public_base_url: str = "http://localhost:8002/media"
+    # Supabase Storage (used when STORAGE_BACKEND=supabase).
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_storage_bucket: str = "recenthink_user_profile_picture"
+    # Avatar upload limits enforced by the User Service.
+    avatar_max_bytes: int = 2 * 1024 * 1024  # 2 MiB
+    avatar_allowed_content_types: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+        ],
+    )
+
     # --- Inter-service URLs -----------------------------------------------
     usage_service_url: str = "http://localhost:8005"
     auth_service_url: str = "http://localhost:8001"
@@ -205,6 +230,7 @@ class Settings(BaseSettings):
         "cors_origins",
         "cors_allow_methods",
         "cors_allow_headers",
+        "avatar_allowed_content_types",
         mode="before",
     )
     @classmethod
@@ -288,6 +314,32 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SMTP_HOST must be set when EMAIL_PROVIDER is 'smtp'.",
             )
+        return self
+
+    @model_validator(mode="after")
+    def _configure_supabase_storage(self) -> Self:
+        """Validate Supabase storage settings and derive the public base URL."""
+        if self.storage_backend.strip().lower() != "supabase":
+            return self
+        if not self.supabase_url:
+            raise ValueError(
+                "SUPABASE_URL must be set when STORAGE_BACKEND is 'supabase'.",
+            )
+        if not self.supabase_service_role_key:
+            raise ValueError(
+                "SUPABASE_SERVICE_ROLE_KEY must be set when STORAGE_BACKEND is "
+                "'supabase'.",
+            )
+        derived = (
+            f"{self.supabase_url.rstrip('/')}/storage/v1/object/public/"
+            f"{self.supabase_storage_bucket}"
+        )
+        # Replace the local-dev default so avatar delete/prefix matching works.
+        if self.storage_public_base_url in {
+            "http://localhost:8002/media",
+            "",
+        }:
+            self.storage_public_base_url = derived
         return self
 
 

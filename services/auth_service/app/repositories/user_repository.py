@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from app.models.enums import Role
 from app.models.user import User
-from sqlalchemy import select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,13 @@ class UserRepository:
             "password_changed_at",
             "role",
             "is_verified",
+            "email_verified_at",
             "is_active",
+            "disabled_at",
+            "is_blocked",
+            "blocked_at",
+            "blocked_reason",
+            "deleted_at",
         }
     )
 
@@ -178,13 +185,109 @@ class UserRepository:
             logger.error("Database error deleting user id=%s: %s", user_id, exc)
             raise RepositoryError("Failed to delete user.") from exc
 
-    def list_users(self, *, skip: int = 0, limit: int = 100) -> list[User]:
-        """Return a paginated list of user records."""
+    def list_users(
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        name: str | None = None,
+        email: str | None = None,
+        role: Role | None = None,
+        is_verified: bool | None = None,
+        is_blocked: bool | None = None,
+        is_active: bool | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
+    ) -> tuple[list[User], int]:
+        """Return a filtered, paginated list of users and the total match count."""
         try:
-            stmt = (
-                select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
+            filters: list[Any] = []
+            if name:
+                pattern = f"%{name}%"
+                filters.append(
+                    or_(
+                        User.first_name.ilike(pattern),
+                        User.last_name.ilike(pattern),
+                        func.concat(User.first_name, " ", User.last_name).ilike(pattern),
+                    )
+                )
+            if email:
+                filters.append(User.email.ilike(f"%{email}%"))
+            if role is not None:
+                filters.append(User.role == role)
+            if is_verified is not None:
+                filters.append(User.is_verified.is_(is_verified))
+            if is_blocked is not None:
+                filters.append(User.is_blocked.is_(is_blocked))
+            if is_active is not None:
+                filters.append(User.is_active.is_(is_active))
+            if created_from is not None:
+                filters.append(User.created_at >= created_from)
+            if created_to is not None:
+                filters.append(User.created_at <= created_to)
+
+            where_clause = and_(*filters) if filters else None
+
+            count_stmt = select(func.count()).select_from(User)
+            if where_clause is not None:
+                count_stmt = count_stmt.where(where_clause)
+            total = int(self._db.scalar(count_stmt) or 0)
+
+            sort_column = {
+                "created_at": User.created_at,
+                "email": User.email,
+                "first_name": User.first_name,
+                "last_name": User.last_name,
+                "role": User.role,
+            }.get(sort, User.created_at)
+            ordering = (
+                sort_column.desc() if order.lower() == "desc" else sort_column.asc()
             )
-            return list(self._db.scalars(stmt).all())
+
+            stmt = select(User)
+            if where_clause is not None:
+                stmt = stmt.where(where_clause)
+            stmt = stmt.order_by(ordering).offset(skip).limit(limit)
+            return list(self._db.scalars(stmt).all()), total
         except SQLAlchemyError as exc:
             logger.error("Database error listing users: %s", exc)
             raise RepositoryError("Failed to list users.") from exc
+
+    def list_all_user_ids(self) -> list[UUID]:
+        """Return every user id (for admin broadcast fan-out)."""
+        try:
+            return list(self._db.scalars(select(User.id)).all())
+        except SQLAlchemyError as exc:
+            logger.error("Database error listing user ids: %s", exc)
+            raise RepositoryError("Failed to list user ids.") from exc
+
+    def dashboard_counts(self, *, today_start: datetime) -> dict[str, int]:
+        """Return identity-level dashboard counters."""
+        try:
+            row = self._db.execute(
+                select(
+                    func.count().label("total_users"),
+                    func.count().filter(User.is_active.is_(True)).label("active_users"),
+                    func.count()
+                    .filter(User.created_at >= today_start)
+                    .label("new_users_today"),
+                    func.count()
+                    .filter(User.is_verified.is_(True))
+                    .label("verified_users"),
+                    func.count()
+                    .filter(User.is_blocked.is_(True))
+                    .label("blocked_users"),
+                ).select_from(User)
+            ).one()
+            return {
+                "total_users": int(row.total_users or 0),
+                "active_users": int(row.active_users or 0),
+                "new_users_today": int(row.new_users_today or 0),
+                "verified_users": int(row.verified_users or 0),
+                "blocked_users": int(row.blocked_users or 0),
+            }
+        except SQLAlchemyError as exc:
+            logger.error("Database error loading dashboard counts: %s", exc)
+            raise RepositoryError("Failed to load dashboard counts.") from exc

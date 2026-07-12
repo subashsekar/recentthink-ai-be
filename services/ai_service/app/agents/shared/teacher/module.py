@@ -28,6 +28,11 @@ class TeacherModule:
         teacher_output = TeacherOutput.from_payload(payload)
         content, cards = self._formatter.format(teacher_output)
         structured = teacher_output.model_dump()
+        # Preserve curriculum payloads from the single OpenRouter JSON.
+        if isinstance(payload.get("course"), dict) and payload["course"]:
+            structured["course"] = payload["course"]
+        if isinstance(payload.get("dsa_pattern"), dict) and payload["dsa_pattern"]:
+            structured["dsa_pattern"] = payload["dsa_pattern"]
 
         if message_repo is not None:
             message_repo.create_message(

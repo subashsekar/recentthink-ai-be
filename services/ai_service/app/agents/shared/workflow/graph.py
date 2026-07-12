@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 
 class AIWorkflowEngine:
-    """Reusable LangGraph workflow: Planner → OpenRouter → Teacher → Coder → Evaluator → Persist."""
+    """Reusable LangGraph workflow: Planner → OpenRouter → Teacher → Coder → Code Explainer → Evaluator → Persist."""
 
     def __init__(self, nodes: WorkflowNodes | None = None) -> None:
         self._nodes = nodes or WorkflowNodes()
@@ -33,6 +33,7 @@ class AIWorkflowEngine:
         graph.add_node("openrouter", self._nodes.openrouter_node)
         graph.add_node("teacher", self._nodes.teacher_node)
         graph.add_node("coder", self._nodes.coder_node)
+        graph.add_node("code_explainer", self._nodes.code_explainer_node)
         graph.add_node("evaluator", self._nodes.evaluator_node)
         graph.add_node("persist", self._nodes.persist_node)
 
@@ -40,7 +41,8 @@ class AIWorkflowEngine:
         graph.add_edge("planner", "openrouter")
         graph.add_edge("openrouter", "teacher")
         graph.add_edge("teacher", "coder")
-        graph.add_edge("coder", "evaluator")
+        graph.add_edge("coder", "code_explainer")
+        graph.add_edge("code_explainer", "evaluator")
         graph.add_edge("evaluator", "persist")
         graph.add_edge("persist", END)
 
@@ -99,6 +101,7 @@ class AIWorkflowEngine:
 
         status_map = {
             WorkflowStatus.COMPLETED.value: SessionStatus.COMPLETED,
+            # Partial module issues still return usable content for LeetCode-style features.
             WorkflowStatus.PARTIAL.value: SessionStatus.COMPLETED,
             WorkflowStatus.FAILED.value: SessionStatus.FAILED,
         }

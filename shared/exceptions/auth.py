@@ -25,7 +25,11 @@ class UserNotFoundError(AuthError):
 
 
 class InactiveUserError(AuthError):
-    """Raised when an inactive user attempts to authenticate."""
+    """Raised when an inactive (self-disabled) user attempts to authenticate."""
+
+
+class BlockedUserError(AuthError):
+    """Raised when an admin-blocked user attempts to authenticate."""
 
 
 class InvalidTokenError(AuthenticationException):
@@ -45,7 +49,15 @@ class RevokedTokenError(AuthenticationException):
 
 
 class EmailNotVerifiedError(AuthError):
-    """Raised when an unverified user attempts to authenticate."""
+    """Raised when an unverified user attempts a verification-gated action."""
+
+    def __init__(
+        self,
+        message: str = "Please verify your email to access this feature.",
+        *,
+        code: str | None = "EMAIL_NOT_VERIFIED",
+    ) -> None:
+        super().__init__(message, code=code)
 
 
 class EmailAlreadyVerifiedError(AuthError):
