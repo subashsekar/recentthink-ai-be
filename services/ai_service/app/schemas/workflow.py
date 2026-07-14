@@ -79,6 +79,9 @@ class AIWorkflowState(TypedDict, total=False):
     evaluator_output: dict[str, Any] | None
     module_responses: list[dict[str, Any]]
     token_usage: dict[str, Any]
+    section_tokens: dict[str, int]
+    requested_sections: list[str] | None
+    regenerated_sections: list[str] | None
     execution_time_ms: int
     latency_ms: int
     errors: list[str]

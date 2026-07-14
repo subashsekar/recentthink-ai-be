@@ -35,8 +35,8 @@ recentthink/
 │   ├── auth_service/         # Auth + User/Admin models  (:8001)
 │   ├── user_service/         # End-user domain           (:8002)
 │   ├── admin_service/        # Admin domain              (:8003)
-│   ├── ai_service/           # AI / RAG (future)         (:8004)
-│   ├── usage_service/        # Usage & billing (future)  (:8005)
+│   ├── ai_service/           # AI / RAG                    (:8004)
+│   ├── usage_service/        # Usage & billing             (:8005)
 │   └── conftest.py           # Cross-service test isolation
 │   # each service: app/{api,core,services,repositories,models,
 │   #                     schemas,dependencies,middleware,utils}, tests/
@@ -56,11 +56,12 @@ recentthink/
 ├── docs/                     # Architecture & workflow documentation
 ├── tests/                    # Root + CRUD integration tests
 ├── .github/workflows/        # CI pipeline
-├── docker-compose.yml        # Postgres + all six services
+├── docker-compose.yml        # Postgres + migrate + all six services
+├── .env.docker               # Docker networking defaults (safe to commit)
+├── docker/migrate.Dockerfile # One-shot Alembic migration image
 ├── alembic.ini
 ├── pyproject.toml            # Deps + tool config (Ruff/Black/isort/mypy/pytest)
 ├── Makefile
-├── .env.example
 └── uv.lock
 ```
 
@@ -86,16 +87,18 @@ package, so there is no duplicated config or database wiring.
 
 ### Ports
 
-| Service | Port | `GET /` health |
-|-----------------|------|----------------|
-| Gateway | 8000 | ✅ |
-| Auth Service | 8001 | ✅ (+ `GET /health/db`) |
-| User Service | 8002 | ✅ |
-| Admin Service | 8003 | ✅ |
-| AI Service | 8004 | ✅ |
-| Usage Service | 8005 | ✅ |
+| Service | Port | `GET /` health | Docker host publish |
+|-----------------|------|----------------|---------------------|
+| Gateway | 8000 | ✅ | **yes** (`:8000`) |
+| Auth Service | 8001 | ✅ (+ `GET /health/db`) | internal only |
+| User Service | 8002 | ✅ | internal only |
+| Admin Service | 8003 | ✅ | internal only |
+| AI Service | 8004 | ✅ | internal only |
+| Usage Service | 8005 | ✅ | internal only |
+| PostgreSQL | 5432 | `pg_isready` | **yes** (`:5432`) |
 
 Every service exposes `GET /` returning `{"service": "<name>", "status": "healthy"}`.
+In Docker, call non-gateway services through the gateway or via `docker compose exec`.
 
 ## Getting started
 
@@ -126,10 +129,10 @@ uv sync --all-groups        # or: make install
 
 ### 3. Configure environment variables
 
-```bash
-cp .env.example .env         # Windows: copy .env.example .env
-```
-
+Keep secrets in a git-ignored `.env` (API keys, `SECRET_KEY`, etc.). Docker
+Compose also loads the committed [`.env.docker`](.env.docker) overlay for
+in-network URLs (`postgres`, `auth_service`, …). Do not point container
+`DATABASE_URL` or `*_SERVICE_URL` at `localhost`.
 ## Running the services
 
 Run any service locally (hot reload). Use the Makefile or the raw `uv` command:
@@ -147,16 +150,37 @@ Interactive docs for a running service are at `http://localhost:<port>/docs`.
 
 ## Running everything with Docker
 
+One command starts PostgreSQL, applies Alembic migrations, and brings up every
+backend service plus the gateway:
+
 ```bash
-make docker-build            # docker compose build
-make docker-up               # docker compose up -d   (Postgres + all services)
-make docker-logs             # tail logs
-make docker-down             # docker compose down
+docker compose up --build
+# detached:
+docker compose up --build -d
 ```
 
-The stack starts PostgreSQL first (with a healthcheck); every service waits for
-it, joins the `recentthink-network`, and exposes its port. See
-[`docs/docker.md`](docs/docker.md).
+Makefile helpers:
+
+```bash
+make docker-build            # docker compose build
+make docker-up               # docker compose up -d --build
+make docker-logs             # tail logs
+make docker-down             # docker compose down
+make docker-verify           # health checks + print service URLs
+```
+
+What you get:
+
+- **Published ports** — Gateway `http://localhost:8000`, PostgreSQL `localhost:5432`
+- **Internal network** — `recentthink-network`; services reach each other by name
+  (e.g. `http://auth_service:8001`), never `localhost`
+- **Startup order** — postgres → migrate → auth → user → usage → ai → admin → gateway
+- **Health waits** — `depends_on` with `condition: service_healthy` /
+  `service_completed_successfully`
+- **Env** — `.env` (secrets) + `.env.docker` (Docker networking defaults)
+
+See [`docs/docker.md`](docs/docker.md) for rebuild, logs, volumes, resource
+limits, and production notes.
 
 ## Database & migrations (Alembic)
 
@@ -203,19 +227,28 @@ uv run mypy shared tests
 
 ## Environment variables
 
-Defined in `.env.example`; loaded via Pydantic `BaseSettings` in
-`shared/config.py`.
+Defined in `.env` (secrets, git-ignored) and `.env.docker` (Docker networking
+defaults). Loaded via Pydantic `BaseSettings` in `shared/config.py`, with
+Compose `environment:` overriding in-network URLs inside containers.
 
 | Variable | Purpose |
 |-------------------------------|--------------------------------------------|
 | `ENVIRONMENT` | `local` / `development` / `staging` / `production` / `test` |
 | `LOG_LEVEL` | Logging level (`INFO`, `DEBUG`, ...) |
+| `LOG_FORMAT` | `json` (containers) or `text` |
 | `DATABASE_URL` | PostgreSQL DSN (`postgresql+psycopg://...`) |
 | `SECRET_KEY` | App secret; **must** be set outside local/test |
-| `JWT_ALGORITHM` | Reserved for a later auth phase |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Reserved for a later auth phase |
-| `OPENAI_API_KEY` | Reserved for the AI phase |
-| `GOOGLE_API_KEY` | Reserved for the AI phase |
+| `JWT_ALGORITHM` | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime |
+| `AUTH_SERVICE_URL` | Auth base URL (Docker: `http://auth_service:8001`) |
+| `USER_SERVICE_URL` | User base URL (Docker: `http://user_service:8002`) |
+| `ADMIN_SERVICE_URL` | Admin base URL (Docker: `http://admin_service:8003`) |
+| `AI_SERVICE_URL` | AI base URL (Docker: `http://ai_service:8004`) |
+| `USAGE_SERVICE_URL` | Usage base URL (Docker: `http://usage_service:8005`) |
+| `INTERNAL_SERVICE_TOKEN` | Shared secret for service-to-service calls |
+| `OPENROUTER_API_KEY` | OpenRouter API key for AI Service |
+| `OPENAI_API_KEY` | Reserved / optional |
+| `GOOGLE_API_KEY` | Reserved / optional |
 
 `.env` is git-ignored; never commit real secrets. The application **fails
 fast** if `SECRET_KEY` is left at the insecure default in any non-local

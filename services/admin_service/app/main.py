@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from app.api.admin import router as admin_router
+from app.api.analytics import router as analytics_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
 from app.api.notifications import router as notifications_router
@@ -49,6 +50,7 @@ register_exception_handlers(app)
 
 app.include_router(health_router)
 app.include_router(admin_router)
+app.include_router(analytics_router)
 app.include_router(notifications_router)
 
 app.state.service_name = SERVICE_NAME

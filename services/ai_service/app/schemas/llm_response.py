@@ -91,10 +91,20 @@ class DsaPatternLLMOutput(BaseModel):
 
 
 class UnifiedLLMResponse(BaseModel):
-    """Complete structured JSON from a single OpenRouter call."""
+    """Shared response envelope from a single OpenRouter call.
 
+    Processors consume teacher/coder/evaluator. Feature-specific payloads live in
+    ``feature`` and are also projected onto legacy ``course`` / ``dsa_pattern``
+    keys by the normalizer for existing adapters.
+    """
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    planner: dict[str, Any] = Field(default_factory=dict)
     teacher: TeacherLLMOutput = Field(default_factory=TeacherLLMOutput)
     coder: CoderLLMOutput = Field(default_factory=CoderLLMOutput)
     evaluator: EvaluatorLLMOutput = Field(default_factory=EvaluatorLLMOutput)
+    feature: dict[str, Any] = Field(default_factory=dict)
+    # Legacy projections kept for validation compatibility with older payloads.
     course: CourseLLMOutput | dict[str, Any] = Field(default_factory=dict)
     dsa_pattern: DsaPatternLLMOutput | dict[str, Any] = Field(default_factory=dict)
+    interview: dict[str, Any] = Field(default_factory=dict)

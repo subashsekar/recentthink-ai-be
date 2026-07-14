@@ -29,6 +29,13 @@ class UsageRecordRepository:
         token_usage: int,
         execution_time_ms: int,
         session_id: UUID | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        model: str | None = None,
+        provider: str | None = None,
+        estimated_cost: float = 0.0,
+        success: bool = True,
+        section_tokens: dict | None = None,
     ) -> UsageRecord:
         record = UsageRecord(
             user_id=user_id,
@@ -36,8 +43,15 @@ class UsageRecordRepository:
             feature=feature,
             request_count=request_count,
             token_usage=token_usage,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             execution_time_ms=execution_time_ms,
+            model=model,
+            provider=provider,
+            estimated_cost=estimated_cost,
+            success=success,
             session_id=session_id,
+            section_tokens=section_tokens,
         )
         try:
             self._db.add(record)

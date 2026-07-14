@@ -22,12 +22,25 @@ class ChatRequest(BaseModel):
     model: str | None = Field(default=None, max_length=255)
     mode_id: str | None = Field(default=None, max_length=50)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=4096, ge=1, le=128000)
+    # Optional client override. When omitted/null, FEATURE_MAX_TOKENS for the
+    # current feature is used (never a single global default).
+    max_tokens: int | None = Field(default=None, ge=1, le=128000)
+    # Incremental generation: regenerate only these logical sections.
+    # Example: ["teacher", "practice"]. Unchanged sections are reused.
+    requested_sections: list[str] | None = Field(default=None)
 
     @field_validator("message")
     @classmethod
     def strip_message(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("requested_sections")
+    @classmethod
+    def normalize_sections(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [item.strip().lower() for item in value if item and item.strip()]
+        return cleaned or None
 
 
 class PlannerOutput(BaseModel):
@@ -63,6 +76,10 @@ class ChatResponse(BaseModel):
     latency_ms: int = 0
     execution_time_ms: int = 0
     estimated_cost: float = 0.0
+    # Tokens attributed to each logical section (estimated from payload size).
+    section_tokens: dict[str, int] | None = None
+    # Sections that were regenerated in this request (None = full generation).
+    regenerated_sections: list[str] | None = None
 
 
 class MessageResponse(BaseModel):
@@ -123,12 +140,22 @@ class FollowUpRequest(BaseModel):
     model: str | None = Field(default=None, max_length=255)
     mode_id: str | None = Field(default=None, max_length=50)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, ge=1, le=32000)
+    max_tokens: int | None = Field(default=None, ge=1, le=32000)
+    # When set, only regenerate these sections (reuse the rest from session).
+    requested_sections: list[str] | None = Field(default=None)
 
     @field_validator("question")
     @classmethod
     def strip_question(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("requested_sections")
+    @classmethod
+    def normalize_followup_sections(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [item.strip().lower() for item in value if item and item.strip()]
+        return cleaned or None
 
 
 class FollowUpResponse(BaseModel):

@@ -17,6 +17,72 @@ class UsageServiceClient(BaseInternalClient):
     async def analytics(self) -> dict[str, Any]:
         return await self._request("GET", "/internal/admin/analytics")
 
+    async def analytics_dashboard(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/dashboard")
+
+    async def analytics_tokens(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/tokens")
+
+    async def analytics_models(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/models")
+
+    async def analytics_providers(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/providers")
+
+    async def analytics_features(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/features")
+
+    async def analytics_users(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        sort: str = "total_tokens",
+        order: str = "desc",
+        user_ids: list[UUID] | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "sort": sort,
+            "order": order,
+        }
+        if user_ids:
+            params["user_ids"] = [str(uid) for uid in user_ids]
+        return await self._request(
+            "GET",
+            "/internal/admin/analytics/users",
+            params=params,
+        )
+
+    async def analytics_user_detail(self, user_id: UUID) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            f"/internal/admin/analytics/users/{user_id}",
+        )
+
+    async def analytics_charts(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/charts")
+
+    async def analytics_costs(self) -> dict[str, Any]:
+        return await self._request("GET", "/internal/admin/analytics/costs")
+
+    async def analytics_export(self, report: str) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/internal/admin/analytics/export",
+            params={"report": report},
+        )
+
+    async def batch_user_stats(self, user_ids: list[UUID]) -> dict[str, Any]:
+        if not user_ids:
+            return {"items": []}
+        return await self._request(
+            "GET",
+            "/internal/admin/users/stats",
+            params={"user_ids": [str(uid) for uid in user_ids]},
+        )
+
     async def user_usage(self, user_id: UUID) -> dict[str, Any]:
         return await self._request("GET", f"/internal/admin/users/{user_id}")
 

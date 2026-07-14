@@ -98,7 +98,7 @@ LEETCODE_AGENT_SPECS: tuple[LeetCodeAgentSpec, ...] = (
 )
 
 LEETCODE_FEATURE = AIFeature.LEETCODE
-LEETCODE_OPENROUTER_PROMPT = "single_llm"
+LEETCODE_OPENROUTER_PROMPT = "master"
 
 
 @dataclass

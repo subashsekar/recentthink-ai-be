@@ -25,6 +25,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!.env.docker
 
 # Testing / coverage
 .pytest_cache/

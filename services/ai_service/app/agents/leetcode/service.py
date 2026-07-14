@@ -175,17 +175,20 @@ class LeetCodeService:
                 resolved_model = str(resolved_model)
             resolved_mode = resolve_mode_id(requested=request.mode_id)
             mode_cfg = get_mode_registry().resolve(resolved_mode)
+            context = build_problem_context(problem)
+            if request.prior_response:
+                context = {**context, "prior_llm_raw": request.prior_response}
             chat_response = await self._platform.chat(
                 user,
                 ChatRequest(
                     feature=AIFeature.LEETCODE,
                     message=build_chat_message(problem),
                     title=problem.title,
-                    context=build_problem_context(problem),
+                    context=context,
                     model=resolved_model,
                     mode_id=resolved_mode,
                     temperature=mode_cfg.generation.temperature,
-                    max_tokens=mode_cfg.generation.max_tokens,
+                    requested_sections=request.requested_sections,
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:

@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from app.api.ai import router as ai_router
+from app.api.cache import router as cache_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
 from app.api.internal_admin import router as internal_admin_router
@@ -13,6 +14,7 @@ from app.agents.course_generator.router import router as course_generator_router
 from app.agents.dsa_pattern.router import router as dsa_pattern_router
 from app.agents.hackerrank.router import router as hackerrank_router
 from app.agents.leetcode.router import router as leetcode_router
+from app.cache import get_cache_manager
 from app.core.config import SERVICE_NAME
 from app.core.rate_limit import limiter
 from fastapi import FastAPI
@@ -29,6 +31,8 @@ APP_VERSION = "0.3.0"
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
     init_sentry()
+    # Ensure the process-wide cache manager is constructed at startup.
+    _app.state.cache_manager = get_cache_manager()
     yield
 
 
@@ -54,6 +58,7 @@ app.state.limiter = limiter
 register_exception_handlers(app)
 
 app.include_router(health_router)
+app.include_router(cache_router)
 app.include_router(ai_router)
 app.include_router(leetcode_router)
 app.include_router(hackerrank_router)

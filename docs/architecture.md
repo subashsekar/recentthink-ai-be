@@ -65,8 +65,8 @@ how to read configuration or open a database session.
 | `auth_service` | 8001 | Owns User & Admin models, repositories, migrations; DB health check. | Authentication, JWT issuance. |
 | `user_service` | 8002 | User profile, avatar, public profile, learning statistics view. | Preferences / notifications. |
 | `admin_service` | 8003 | Admin dashboard, user management orchestration, audit logs, notifications (HTTP aggregation only). | Feature flags / reports export. |
-| `ai_service` | 8004 | Health only. | AI agents, RAG pipelines. |
-| `usage_service` | 8005 | Health only. | Usage metering & billing. |
+| `ai_service` | 8004 | AI agents, RAG pipelines, OpenRouter orchestration + free in-memory cache. | Streaming / more products. |
+| `usage_service` | 8005 | Usage metering & billing. | Quotas / invoices. |
 
 ## Health endpoints
 

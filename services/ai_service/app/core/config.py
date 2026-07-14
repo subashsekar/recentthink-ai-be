@@ -43,10 +43,46 @@ class AIServiceSettings(BaseSettings):
     json_validation_max_retries: int = Field(default=1, ge=0, le=3)
     max_user_message_length: int = 32000
 
+    # --- In-memory response cache (free; no Redis) ------------------------
+    cache_enabled: bool = True
+    cache_max_entries: int = Field(default=1000, ge=1)
+    cache_default_ttl: int = Field(default=86_400, ge=1)  # 24h
+    cache_ttl_leetcode: int = Field(default=86_400, ge=1)
+    cache_ttl_hackerrank: int = Field(default=86_400, ge=1)
+    cache_ttl_dsa_pattern: int = Field(default=604_800, ge=1)  # 7d
+    cache_ttl_course_generator: int = Field(default=2_592_000, ge=1)  # 30d
+    cache_ttl_interview: int = Field(default=43_200, ge=1)  # 12h (unused; not cached)
+
+    # Feature-specific OpenRouter completion budgets (override via env as JSON map
+    # only if needed — prefer FEATURE_MAX_TOKENS in feature_tokens.py as source).
+    feature_max_tokens_leetcode: int = Field(default=1800, ge=1)
+    feature_max_tokens_hackerrank: int = Field(default=1800, ge=1)
+    feature_max_tokens_dsa_pattern: int = Field(default=3000, ge=1)
+    feature_max_tokens_course_generator: int = Field(default=4500, ge=1)
+    feature_max_tokens_interview: int = Field(default=2200, ge=1)
+
+
+from app.core.feature_tokens import FEATURE_MAX_TOKENS as _BUILTIN_FEATURE_MAX_TOKENS
+
 
 def get_ai_settings() -> AIServiceSettings:
     """Return AI service settings."""
     return AIServiceSettings()
+
+
+def feature_max_tokens_map(settings: AIServiceSettings | None = None) -> dict[str, int]:
+    """Resolve FEATURE_MAX_TOKENS from settings (env-overridable per feature)."""
+    cfg = settings or get_ai_settings()
+    return {
+        **_BUILTIN_FEATURE_MAX_TOKENS,
+        "leetcode": cfg.feature_max_tokens_leetcode,
+        "hackerrank": cfg.feature_max_tokens_hackerrank,
+        "dsa": cfg.feature_max_tokens_dsa_pattern,
+        "dsa_pattern": cfg.feature_max_tokens_dsa_pattern,
+        "course_generator": cfg.feature_max_tokens_course_generator,
+        "course": cfg.feature_max_tokens_course_generator,
+        "interview": cfg.feature_max_tokens_interview,
+    }
 
 
 __all__ = [
@@ -54,6 +90,7 @@ __all__ = [
     "PORT",
     "SERVICE_NAME",
     "Settings",
+    "feature_max_tokens_map",
     "get_ai_settings",
     "get_settings",
     "settings",

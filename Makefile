@@ -7,7 +7,7 @@
 	format format-check lint typecheck test coverage check \
 	run-gateway run-auth run-user run-admin run-ai run-usage \
 	migrate migrate-down migrate-history migrate-revision seed-admin \
-	db-up db-down docker-build docker-up docker-down docker-logs clean
+	db-up db-down docker-build docker-up docker-down docker-logs docker-verify clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -104,14 +104,17 @@ db-down: ## Stop and remove local infrastructure containers
 docker-build: ## Build all service images
 	docker compose build
 
-docker-up: ## Start the full stack (Postgres + all services)
-	docker compose up -d
+docker-up: ## Start the full stack (Postgres + migrate + all services)
+	docker compose up -d --build
 
 docker-down: ## Stop and remove the full stack
 	docker compose down
 
 docker-logs: ## Tail logs from all containers
 	docker compose logs -f
+
+docker-verify: ## Verify health and print service URLs
+	uv run python scripts/docker-verify.py
 
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage dist build

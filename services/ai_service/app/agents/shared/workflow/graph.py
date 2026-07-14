@@ -10,6 +10,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.shared.workflow.nodes import WorkflowNodes
+from app.core.config import feature_max_tokens_map, get_ai_settings
+from app.core.feature_tokens import TOP_LEVEL_SECTIONS, resolve_feature_max_tokens
 from app.models.enums import SessionStatus, WorkflowStatus
 from app.schemas.ai import ChatRequest, ChatResponse, ModuleResponse, PlannerOutput
 from app.schemas.workflow import AIWorkflowState
@@ -58,6 +60,12 @@ class AIWorkflowEngine:
         workflow_id = str(uuid4())
         sanitized_message = sanitize_user_input(request.message)
         sanitized_request = request.model_copy(update={"message": sanitized_message})
+        resolved_max_tokens = resolve_feature_max_tokens(
+            sanitized_request.feature.value,
+            override=sanitized_request.max_tokens,
+            requested_sections=sanitized_request.requested_sections,
+            limits=feature_max_tokens_map(get_ai_settings()),
+        )
 
         initial: AIWorkflowState = {
             "workflow_id": workflow_id,
@@ -71,12 +79,16 @@ class AIWorkflowEngine:
             "model": sanitized_request.model,
             "mode_id": sanitized_request.mode_id,
             "temperature": sanitized_request.temperature,
-            "max_tokens": sanitized_request.max_tokens,
+            "max_tokens": resolved_max_tokens,
+            "requested_sections": sanitized_request.requested_sections,
+            "regenerated_sections": None,
+            "section_tokens": {},
             "memory_context": {},
             "planner_output": None,
             "llm_raw": None,
             "teacher_output": None,
             "coder_output": None,
+            "code_explainer_output": None,
             "evaluator_output": None,
             "module_responses": [],
             "token_usage": {},
@@ -98,6 +110,8 @@ class AIWorkflowEngine:
         module_outputs = [
             ModuleResponse.model_validate(item) for item in (result.get("module_responses") or [])
         ]
+        regenerated = result.get("regenerated_sections")
+        module_outputs = _filter_modules_for_sections(module_outputs, regenerated)
 
         status_map = {
             WorkflowStatus.COMPLETED.value: SessionStatus.COMPLETED,
@@ -110,6 +124,8 @@ class AIWorkflowEngine:
             SessionStatus.COMPLETED,
         )
 
+        section_tokens = result.get("section_tokens") or token_usage.get("section_tokens") or None
+
         logger.info(
             "workflow_completed",
             extra={
@@ -119,6 +135,9 @@ class AIWorkflowEngine:
                 "errors": result.get("errors"),
                 "total_tokens": token_usage.get("total_tokens", 0),
                 "execution_time_ms": total_execution_ms,
+                "max_tokens": resolved_max_tokens,
+                "section_tokens": section_tokens,
+                "regenerated_sections": regenerated,
             },
         )
 
@@ -135,4 +154,20 @@ class AIWorkflowEngine:
             latency_ms=int(result.get("latency_ms", 0)),
             execution_time_ms=total_execution_ms,
             estimated_cost=float(token_usage.get("estimated_cost_usd", 0)),
+            section_tokens=section_tokens if isinstance(section_tokens, dict) else None,
+            regenerated_sections=list(regenerated) if regenerated else None,
         )
+
+
+def _filter_modules_for_sections(
+    modules: list[ModuleResponse],
+    regenerated: list[str] | None,
+) -> list[ModuleResponse]:
+    """Return only modules corresponding to regenerated sections (when set)."""
+    if not regenerated:
+        return modules
+    requested_top = {s for s in regenerated if s in TOP_LEVEL_SECTIONS}
+    if not requested_top:
+        # Nested-only regen: keep teacher (carries feature nested payload).
+        return [m for m in modules if m.module.value == "teacher"]
+    return [m for m in modules if m.module.value in requested_top]

@@ -50,8 +50,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Logical stage inside the single OpenRouter JSON (course.overview).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.ROADMAP_GENERATOR,
@@ -59,8 +59,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Week-wise roadmap inside the single OpenRouter JSON (course.roadmap).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.LESSON_GENERATOR,
@@ -68,8 +68,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Lessons inside the single OpenRouter JSON (course.lessons).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.QUIZ_GENERATOR,
@@ -77,8 +77,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Quizzes and flashcards inside the single OpenRouter JSON (course.quizzes).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.ASSIGNMENT_GENERATOR,
@@ -86,8 +86,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Assignments inside the single OpenRouter JSON (course.assignments).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.PROJECT_GENERATOR,
@@ -95,8 +95,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Projects inside the single OpenRouter JSON (course.projects).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.ASSESSMENT_GENERATOR,
@@ -104,8 +104,8 @@ COURSE_AGENT_SPECS: tuple[CourseAgentSpec, ...] = (
         description="Assessments inside the single OpenRouter JSON (course.assessments).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.course_generator.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.course_generator",
     ),
     CourseAgentSpec(
         role=CourseAgentRole.TEACHER,
@@ -141,4 +141,4 @@ class CourseAgents:
 
 
 COURSE_FEATURE = AIFeature.COURSE_GENERATOR
-COURSE_OPENROUTER_PROMPT = "single_llm"
+COURSE_OPENROUTER_PROMPT = "master"

@@ -95,3 +95,40 @@ def test_normalize_enriches_teacher_from_planner_metadata() -> None:
     )
     assert payload["teacher"]["concepts"] == ["Array"]
     assert payload["teacher"]["learning_objectives"] == ["Recognize two pointers"]
+
+
+def test_normalize_projects_feature_onto_course() -> None:
+    payload = normalize_unified_llm_payload(
+        {
+            "teacher": {"problem_summary": "Python path"},
+            "coder": {},
+            "evaluator": {},
+            "feature": {
+                "overview": {"title": "Python Mastery", "description": "Learn Python deeply."},
+                "roadmap": [{"week": 1, "title": "Basics"}],
+                "lessons": [{"id": "l1", "title": "Variables"}],
+            },
+        },
+        feature_name="course_generator",
+    )
+    assert payload["course"]["overview"]["title"] == "Python Mastery"
+    assert payload["feature"]["overview"]["title"] == "Python Mastery"
+
+
+def test_normalize_projects_feature_onto_dsa_pattern() -> None:
+    from app.agents.shared.llm_response_normalizer import feature_payload_missing_content
+
+    payload = normalize_unified_llm_payload(
+        {
+            "teacher": {},
+            "coder": {},
+            "evaluator": {},
+            "feature": {
+                "overview": {"definition": "Maintain a contiguous window."},
+                "recognition": {"keywords": ["subarray", "window"]},
+            },
+        },
+        feature_name="dsa_pattern",
+    )
+    assert payload["dsa_pattern"]["overview"]["definition"] == "Maintain a contiguous window."
+    assert feature_payload_missing_content("dsa_pattern", payload) is False

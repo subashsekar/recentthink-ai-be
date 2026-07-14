@@ -37,6 +37,7 @@ class UsageTracker:
         execution_time_ms: int,
         estimated_cost: float,
         request_count: int = 1,
+        section_tokens: dict[str, int] | None = None,
     ) -> None:
         total_tokens = input_tokens + output_tokens
         if self._model_usage_repo is not None:
@@ -59,6 +60,13 @@ class UsageTracker:
             execution_time_ms=execution_time_ms,
             session_id=session_id,
             request_count=request_count,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            model=model,
+            provider=provider,
+            estimated_cost=estimated_cost,
+            success=True,
+            section_tokens=section_tokens,
         )
 
         logger.info(
@@ -75,5 +83,6 @@ class UsageTracker:
                 "latency_ms": latency_ms,
                 "execution_time_ms": execution_time_ms,
                 "estimated_cost": estimated_cost,
+                "section_tokens": section_tokens,
             },
         )

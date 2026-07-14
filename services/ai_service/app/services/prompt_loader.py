@@ -12,6 +12,9 @@ logger = get_logger(__name__)
 
 PROMPTS_ROOT = Path(__file__).resolve().parents[1] / "prompts"
 
+# Canonical master-prompt aliases used by product adapters / PromptBuilder.
+_MASTER_MODULE_NAMES: frozenset[str] = frozenset({"master", "single_llm"})
+
 
 class PromptLoader:
     """Load prompts from files with versioning, hot reload, and DB overrides."""
@@ -34,6 +37,20 @@ class PromptLoader:
     def _cache_key(self, feature: str, module_name: str, version: str, locale: str) -> tuple[str, str, str, str]:
         return (feature, module_name, version, locale)
 
+    def load_shared(self, module_name: str, *, version: str | None = None, locale: str | None = None) -> str:
+        """Load a shared prompt (`shared/system.md`, `shared/safety.md`, …)."""
+        return self.load(feature="shared", module_name=module_name, version=version, locale=locale)
+
+    def load_feature_master(
+        self,
+        feature: str,
+        *,
+        version: str | None = None,
+        locale: str | None = None,
+    ) -> str:
+        """Load the single master prompt for an AI product (`features/{feature}.md`)."""
+        return self.load(feature=feature, module_name="master", version=version, locale=locale)
+
     def _resolve_path(
         self,
         feature: str,
@@ -41,16 +58,42 @@ class PromptLoader:
         version: str,
         locale: str,
     ) -> Path:
-        candidates = [
-            self._root / feature / locale / version / f"{module_name}.md",
-            self._root / feature / locale / version / f"{module_name}.txt",
-            self._root / feature / version / f"{module_name}.md",
-            self._root / feature / version / f"{module_name}.txt",
-            self._root / "shared" / version / f"{module_name}.md",
-            self._root / "shared" / version / f"{module_name}.txt",
-            self._root / "shared" / f"{module_name}.md",
-            self._root / "shared" / f"{module_name}.txt",
-        ]
+        candidates: list[Path] = []
+
+        # New layout: prompts/features/{feature}.md (one master per product)
+        if module_name in _MASTER_MODULE_NAMES and feature != "shared":
+            candidates.extend(
+                [
+                    self._root / "features" / f"{feature}.md",
+                    self._root / "features" / f"{feature}.txt",
+                    self._root / "features" / version / f"{feature}.md",
+                    self._root / "features" / version / f"{feature}.txt",
+                ],
+            )
+
+        # New layout: prompts/shared/{module}.md
+        if feature == "shared":
+            candidates.extend(
+                [
+                    self._root / "shared" / f"{module_name}.md",
+                    self._root / "shared" / f"{module_name}.txt",
+                    self._root / "shared" / version / f"{module_name}.md",
+                    self._root / "shared" / version / f"{module_name}.txt",
+                ],
+            )
+
+        candidates.extend(
+            [
+                self._root / feature / locale / version / f"{module_name}.md",
+                self._root / feature / locale / version / f"{module_name}.txt",
+                self._root / feature / version / f"{module_name}.md",
+                self._root / feature / version / f"{module_name}.txt",
+                self._root / "shared" / version / f"{module_name}.md",
+                self._root / "shared" / version / f"{module_name}.txt",
+                self._root / "shared" / f"{module_name}.md",
+                self._root / "shared" / f"{module_name}.txt",
+            ],
+        )
         for path in candidates:
             if path.is_file():
                 return path

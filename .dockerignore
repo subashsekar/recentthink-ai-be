@@ -11,9 +11,10 @@ htmlcov/
 .coverage
 .coverage.*
 
-# Secrets and local env (provided at runtime via compose environment)
+# Secrets and local env (provided at runtime via compose env_file / environment)
 .env
 .env.*
+!.env.docker
 
 # Git and IDE
 .git/
@@ -35,5 +36,9 @@ volumes/
 tests/
 **/tests/
 
-# Infrastructure placeholders
+# Infrastructure placeholders / docs noise
 infrastructure/
+docs/
+.github/
+*.md
+!README.md

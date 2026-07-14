@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.agents.shared.orchestrator.platform_orchestrator import AIPlatformOrchestrator
+from app.cache import get_cache_manager
 from app.clients.openrouter import OpenRouterClient
 from app.clients.usage import UsageServiceClient
 from app.repositories.agent_execution_repository import AgentExecutionRepository
@@ -50,6 +51,7 @@ def get_ai_platform_service(db: Session = Depends(get_db)) -> AIPlatformService:
         execution_trace=ExecutionTraceService(execution_repo),
         memory_service=memory_service,
         usage_tracker=usage_tracker,
+        cache_manager=get_cache_manager(),
     )
     history_manager = HistoryManager(
         session_repo=session_repo,

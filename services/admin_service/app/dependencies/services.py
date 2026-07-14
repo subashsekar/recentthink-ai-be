@@ -57,8 +57,13 @@ def get_audit_service(
 def get_dashboard_service(
     auth: AuthServiceClient = Depends(get_auth_client),
     user: UserServiceClient = Depends(get_user_client),
+    usage: UsageServiceClient = Depends(get_usage_client),
 ) -> DashboardService:
-    return DashboardService(auth_client=auth, user_client=user)
+    return DashboardService(
+        auth_client=auth,
+        user_client=user,
+        usage_client=usage,
+    )
 
 
 def get_user_management_service(
@@ -80,8 +85,15 @@ def get_user_management_service(
 def get_analytics_service(
     ai: AIServiceClient = Depends(get_ai_client),
     usage: UsageServiceClient = Depends(get_usage_client),
+    auth: AuthServiceClient = Depends(get_auth_client),
+    user: UserServiceClient = Depends(get_user_client),
 ) -> AnalyticsService:
-    return AnalyticsService(ai_client=ai, usage_client=usage)
+    return AnalyticsService(
+        usage_client=usage,
+        auth_client=auth,
+        user_client=user,
+        ai_client=ai,
+    )
 
 
 def get_system_health_service(

@@ -197,3 +197,34 @@ uv run pytest tests/test_dsa_pattern_api.py tests/test_dsa_pattern_adapter.py -q
 - **Learning Path Generator** — `agents/course_generator/`
 - **DSA Pattern Coach** — `agents/dsa_pattern/` (flagship pattern-centric learning)
 - **Interview Trainer** — scaffold for a future product
+
+## Token Optimization
+
+Cost controls without changing the one-OpenRouter-call architecture.
+
+### Local Memory Cache
+
+See [`app/cache/README.md`](app/cache/README.md). Cache hits skip OpenRouter entirely.
+
+### Feature-specific `max_tokens` (`FEATURE_MAX_TOKENS`)
+
+Located in `app/core/feature_tokens.py` (env-overridable via AI settings):
+
+| Feature | max_tokens |
+|---------|------------|
+| LeetCode / HackerRank | 1800 |
+| DSA Pattern | 3000 |
+| Course Generator | 4500 |
+| Interview Trainer | 2200 |
+
+There is **no** single global completion limit. `openrouter_node` resolves the budget from the active feature (optional client `max_tokens` override still wins).
+
+### Incremental generation (`requested_sections`)
+
+`ChatRequest.requested_sections` / product `requested_sections` instruct the Prompt Builder to generate **only** those sections (e.g. `teacher`, `coder`, `practice`, `quiz`). Pass `prior_response` (or `context.prior_llm_raw`) so unchanged sections are merged and reused. The API returns `regenerated_sections` and only the regenerated modules.
+
+Still **exactly one** OpenRouter call when the cache misses.
+
+### Per-section token tracking
+
+After the single completion, AI Service apportions `completion_tokens` by section size into `section_tokens` JSON (e.g. `{"teacher": 950, "coder": 1200}`). Stored on `usage_records.section_tokens` and returned to Admin analytics as `section_token_totals` for cost-driver analysis.

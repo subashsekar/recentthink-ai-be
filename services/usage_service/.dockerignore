@@ -1,0 +1,17 @@
+# Service-level ignore hints (build context is still the repo root;
+# the root .dockerignore is what Docker applies). Keep in sync with root.
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+**/tests/
+.env
+.env.*
+.git/
+*.md
+!README.md

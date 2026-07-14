@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.agents.shared.workflow.graph import AIWorkflowEngine
 from app.agents.shared.workflow.nodes import WorkflowNodes
+from app.cache import CacheManager
 from app.clients.openrouter import OpenRouterClient
 from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
@@ -30,6 +31,7 @@ class AIPlatformOrchestrator:
         execution_trace: ExecutionTraceService | None = None,
         memory_service: ConversationMemoryService | None = None,
         usage_tracker: UsageTracker | None = None,
+        cache_manager: CacheManager | None = None,
         workflow_engine: AIWorkflowEngine | None = None,
         teacher: Any | None = None,
         coder: Any | None = None,
@@ -49,6 +51,7 @@ class AIPlatformOrchestrator:
                 execution_trace=execution_trace,
                 memory_service=memory_service,
                 usage_tracker=usage_tracker,
+                cache_manager=cache_manager,
             )
             self._engine = AIWorkflowEngine(nodes=nodes)
 

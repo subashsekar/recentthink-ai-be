@@ -51,8 +51,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="Pattern overview + mental model inside the single OpenRouter JSON (dsa_pattern.overview).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.RECOGNITION,
@@ -60,8 +60,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="How to identify the pattern (keywords, signals, checklist) in dsa_pattern.recognition.",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.VISUALIZATION,
@@ -69,8 +69,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="ASCII diagrams and step-by-step visuals in dsa_pattern.visualization.",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.TEMPLATE,
@@ -78,8 +78,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="Reusable multi-language templates in dsa_pattern.templates (not problem-specific).",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.WALKTHROUGH,
@@ -87,8 +87,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="Easy/medium/hard worked examples in dsa_pattern.*_example.",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.PRACTICE,
@@ -96,8 +96,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="Practice roadmap and problem sets in dsa_pattern.practice.",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.QUIZ,
@@ -105,8 +105,8 @@ PATTERN_AGENT_SPECS: tuple[PatternAgentSpec, ...] = (
         description="MCQs, recognition/scenario/coding questions, flashcards in dsa_pattern.quiz.",
         uses_openrouter=False,
         workflow_module=ModuleName.OPENROUTER,
-        prompt_module="single_llm",
-        shared_path="app.prompts.dsa_pattern.v1.single_llm",
+        prompt_module="master",
+        shared_path="app.prompts.features.dsa_pattern",
     ),
     PatternAgentSpec(
         role=PatternAgentRole.PROGRESS,
@@ -151,4 +151,4 @@ class PatternAgents:
 
 
 DSA_PATTERN_FEATURE = AIFeature.DSA_PATTERN
-DSA_PATTERN_OPENROUTER_PROMPT = "single_llm"
+DSA_PATTERN_OPENROUTER_PROMPT = "master"

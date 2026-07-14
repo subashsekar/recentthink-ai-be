@@ -29,6 +29,13 @@ class UsageServiceClient:
         execution_time_ms: int,
         session_id: UUID | None = None,
         request_count: int = 1,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        model: str | None = None,
+        provider: str | None = None,
+        estimated_cost: float = 0.0,
+        success: bool = True,
+        section_tokens: dict[str, int] | None = None,
     ) -> None:
         payload = {
             "user_id": str(user_id),
@@ -36,8 +43,15 @@ class UsageServiceClient:
             "feature": feature,
             "request_count": request_count,
             "token_usage": token_usage,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
             "execution_time_ms": execution_time_ms,
+            "model": model,
+            "provider": provider,
+            "estimated_cost": estimated_cost,
+            "success": success,
             "session_id": str(session_id) if session_id else None,
+            "section_tokens": section_tokens,
         }
         url = f"{self._base_url}/usage/record"
         headers = {

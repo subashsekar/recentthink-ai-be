@@ -25,6 +25,7 @@ dependencies = [
     "langchain-core>=0.3.28",
     "beautifulsoup4>=4.12.3",
     "python-multipart>=0.0.17",
+    "cachetools>=5.5.0",
 ]
 
 [dependency-groups]

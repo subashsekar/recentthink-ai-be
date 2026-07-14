@@ -35,7 +35,11 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
-def _to_user_item(data: dict[str, Any], profile: dict[str, Any] | None = None) -> AdminUserItem:
+def _to_user_item(
+    data: dict[str, Any],
+    profile: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
+) -> AdminUserItem:
     return AdminUserItem(
         id=UUID(str(data["id"])),
         first_name=data.get("first_name") or "",
@@ -53,6 +57,17 @@ def _to_user_item(data: dict[str, Any], profile: dict[str, Any] | None = None) -
         current_status=(profile or {}).get("current_status"),
         primary_skill=(profile or {}).get("primary_skill"),
         profile_picture_url=(profile or {}).get("profile_picture_url"),
+        total_requests=int((usage or {}).get("total_requests", 0)),
+        prompt_tokens=int((usage or {}).get("prompt_tokens", 0)),
+        completion_tokens=int((usage or {}).get("completion_tokens", 0)),
+        total_tokens=int((usage or {}).get("total_tokens", 0)),
+        estimated_cost=float((usage or {}).get("estimated_cost", 0)),
+        last_ai_activity=_parse_dt(
+            (usage or {}).get("last_active") or (usage or {}).get("last_activity")
+        ),
+        most_used_feature=(usage or {}).get("most_used_feature"),
+        most_used_model=(usage or {}).get("most_used_model"),
+        current_plan=(usage or {}).get("current_plan"),
     )
 
 
@@ -108,14 +123,24 @@ class UserManagementService:
         items_raw = data.get("items", [])
         user_ids = [UUID(str(u["id"])) for u in items_raw]
         profiles_by_id: dict[str, dict[str, Any]] = {}
+        usage_by_id: dict[str, dict[str, Any]] = {}
         if user_ids:
-            batch = await self._user.batch_profiles(user_ids)
+            batch, usage_batch = await asyncio.gather(
+                self._user.batch_profiles(user_ids),
+                self._usage.batch_user_stats(user_ids),
+            )
             for p in batch.get("items", []):
                 profiles_by_id[str(p["user_id"])] = p
+            for u in usage_batch.get("items", []):
+                usage_by_id[str(u["user_id"])] = u
 
         # Optional profile-side filters after enrichment
         items = [
-            _to_user_item(u, profiles_by_id.get(str(u["id"])))
+            _to_user_item(
+                u,
+                profiles_by_id.get(str(u["id"])),
+                usage_by_id.get(str(u["id"])),
+            )
             for u in items_raw
         ]
         if primary_skill:
@@ -131,19 +156,29 @@ class UserManagementService:
         )
 
     async def get_user(self, user_id: UUID) -> UserDetailResponse:
-        user_data, profile_detail, ai_history, usage = await asyncio.gather(
-            self._auth.get_user(user_id),
-            self._user.get_profile_detail(user_id),
-            self._ai.user_history(user_id),
-            self._usage.user_usage(user_id),
+        user_data, profile_detail, ai_history, usage, usage_analytics = (
+            await asyncio.gather(
+                self._auth.get_user(user_id),
+                self._user.get_profile_detail(user_id),
+                self._ai.user_history(user_id),
+                self._usage.user_usage(user_id),
+                self._usage.analytics_user_detail(user_id),
+            )
         )
         profile = profile_detail.get("profile")
         return UserDetailResponse(
-            user=_to_user_item(user_data, profile if isinstance(profile, dict) else None),
+            user=_to_user_item(
+                user_data,
+                profile if isinstance(profile, dict) else None,
+                usage_analytics if isinstance(usage_analytics, dict) else None,
+            ),
             profile=profile if isinstance(profile, dict) else None,
             statistics=profile_detail.get("statistics"),
             ai_history=ai_history,
             usage=usage,
+            usage_analytics=usage_analytics
+            if isinstance(usage_analytics, dict)
+            else None,
         )
 
     async def block_user(

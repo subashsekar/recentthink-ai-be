@@ -13,6 +13,8 @@ from app.agents.shared.followup.engine import FollowUpEngine, FollowUpIntent
 from app.agents.shared.teacher.module import TeacherModule
 from app.agents.shared.teacher.parser import parse_teacher_payload
 from app.clients.openrouter import OpenRouterClient
+from app.core.config import feature_max_tokens_map, get_ai_settings
+from app.core.feature_tokens import resolve_feature_max_tokens
 from app.dependencies.auth import AuthenticatedUser, can_access_session
 from app.models.enums import AIFeature, MessageRole, ModuleName
 from app.repositories.ai_message_repository import AIMessageRepository
@@ -22,6 +24,7 @@ from app.services.memory.conversation_memory import ConversationMemoryService
 from app.services.prompt_loader import PromptLoader
 from app.services.usage.usage_tracker import UsageTracker
 from app.utils.prompt_sanitizer import sanitize_user_input
+from app.utils.section_tokens import estimate_section_tokens
 from shared.exceptions.auth import ForbiddenError
 from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
@@ -100,9 +103,22 @@ class FollowUpService:
         response = None
         final_payload: dict[str, Any] = {}
         max_attempts = 2
-        # FollowUpRequest always has defaults, so treat the defaults as "unset" and apply mode defaults.
-        effective_temperature = request.temperature if request.temperature != 0.2 else mode_cfg.generation.temperature
-        effective_max_tokens = request.max_tokens if request.max_tokens != 2048 else mode_cfg.generation.max_tokens
+        effective_temperature = (
+            request.temperature if request.temperature != 0.2 else mode_cfg.generation.temperature
+        )
+        feature_name = session.feature.value if hasattr(session.feature, "value") else str(session.feature)
+        effective_max_tokens = resolve_feature_max_tokens(
+            feature_name,
+            override=request.max_tokens,
+            requested_sections=request.requested_sections,
+            limits=feature_max_tokens_map(get_ai_settings()),
+        )
+        if request.requested_sections:
+            user_prompt = (
+                user_prompt
+                + "\n\nRequested sections (generate ONLY these):\n"
+                + json.dumps({"sections": request.requested_sections}, indent=2)
+            )
         for attempt in range(max_attempts):
             response = await self._llm.chat_completion(
                 system_prompt="\n\n".join([part for part in (mode_prompt, teacher_system, system_prompt) if part]),
@@ -152,6 +168,11 @@ class FollowUpService:
         )
 
         if self._usage is not None:
+            section_tokens = estimate_section_tokens(
+                {"teacher": final_payload},
+                completion_tokens=response.completion_tokens,
+                requested_sections=request.requested_sections,
+            )
             await self._usage.record_request(
                 user_id=user.user_id,
                 session_id=request.session_id,
@@ -164,6 +185,7 @@ class FollowUpService:
                 execution_time_ms=elapsed,
                 estimated_cost=0.0,
                 request_count=1,
+                section_tokens=section_tokens or None,
             )
 
         logger.info(

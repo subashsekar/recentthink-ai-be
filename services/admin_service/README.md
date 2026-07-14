@@ -10,8 +10,8 @@ logs, notifications, and system health.
 |--------|--------|
 | Login / JWT / roles / block / unblock / activate / deactivate / delete | **Auth Service** (via internal HTTP) |
 | Profiles / learning stats | **User Service** (via internal HTTP) |
-| AI sessions / model usage analytics | **AI Service** (via internal HTTP) |
-| Request metering analytics | **Usage Service** (via internal HTTP) |
+| AI sessions / conversation history | **AI Service** (via internal HTTP) |
+| AI usage analytics (tokens, cost, features, models, providers, charts) | **Usage Service** (via internal HTTP) |
 | Audit logs / notifications | **Admin Service** |
 
 Admin Service **never** reads or writes another service's database. All cross-service
@@ -50,16 +50,29 @@ Client → Gateway
 
 ### Users
 
-- `GET /admin/users` — search / filter / paginate
-- `GET /admin/users/{user_id}` — identity + profile + stats + AI history + usage
+- `GET /admin/users` — search / filter / paginate (includes Usage Service token/cost columns)
+- `GET /admin/users/{user_id}` — identity + profile + stats + AI history + usage analytics
 - `PATCH /admin/users/{user_id}/block|unblock|activate|deactivate`
 - `DELETE /admin/users/{user_id}`
 
-### Analytics
+### AI Usage Analytics (from Usage Service only)
 
-- `GET /admin/analytics` — AI sessions / conversations / latency / tokens / cost
-- `GET /admin/usage` — requests + top features + provider/model cost
-- `GET /admin/models` — provider / model breakdown
+- `GET /admin/analytics/dashboard` — cards + platform statistics
+- `GET /admin/analytics/tokens` — prompt/completion/totals + top users/features/models/providers
+- `GET /admin/analytics/models` — per-model requests/tokens/cost/latency/success
+- `GET /admin/analytics/providers` — per-provider requests/tokens/cost
+- `GET /admin/analytics/features` — LeetCode / HackerRank / Course / DSA / Interview
+- `GET /admin/analytics/users` — paginated user usage table (sort / search / filter)
+- `GET /admin/analytics/users/{user_id}` — per-user usage detail
+- `GET /admin/analytics/charts` — time-series + ranking chart payloads
+- `GET /admin/analytics/costs` — cost analytics
+- `GET /admin/analytics/export?report=...&format=csv|excel|pdf` — CSV / Excel / PDF reports
+
+### Legacy analytics (still available)
+
+- `GET /admin/analytics` — AI sessions / conversations / latency (AI Service)
+- `GET /admin/usage` — requests + features + models/providers (Usage Service)
+- `GET /admin/models` — provider / model breakdown (Usage Service)
 
 ### Audit
 

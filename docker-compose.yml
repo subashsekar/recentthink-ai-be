@@ -1,39 +1,70 @@
-# Full local stack: PostgreSQL + six microservices.
-# Each service has its own Dockerfile under services/<name>/Dockerfile.
-# Build context is always the repo root (shared + pyproject.toml + uv.lock).
+# RecentThink - full backend stack
+# One command: docker compose up --build
+#
+# Startup order:
+#   postgres → migrate → auth → user → usage → ai → admin → gateway
+#
+# Only Gateway (:8000) and PostgreSQL (:5432) are published to the host.
+# All other services communicate on recentthink-network by service name.
 
 name: recentthink
 
 x-common-env: &common-env
   ENVIRONMENT: ${ENVIRONMENT:-local}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  DATABASE_URL: postgresql+psycopg://recentthink:recentthink@postgres:5432/recentthink
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-recentthink}:${POSTGRES_PASSWORD:-recentthink}@postgres:5432/${POSTGRES_DB:-recentthink}
   SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
   JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
   INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-service-token}
+  AUTH_SERVICE_URL: http://auth_service:8001
+  USER_SERVICE_URL: http://user_service:8002
+  ADMIN_SERVICE_URL: http://admin_service:8003
+  AI_SERVICE_URL: http://ai_service:8004
+  USAGE_SERVICE_URL: http://usage_service:8005
+  CACHE_ENABLED: ${CACHE_ENABLED:-true}
+  CACHE_MAX_ENTRIES: ${CACHE_MAX_ENTRIES:-1000}
+  CACHE_DEFAULT_TTL: ${CACHE_DEFAULT_TTL:-86400}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001}
   CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+  AVAILABLE_MODELS: ${AVAILABLE_MODELS:-google/gemini-2.5-flash,deepseek/deepseek-chat,meta-llama/llama-3.3-70b-instruct,openai/gpt-4o,nvidia/llama-3.1-nemotron-ultra-253b-v1}
   STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
-  STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-storage}
-  STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-http://localhost:8002/media}
+  STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-/app/storage}
+  STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-http://localhost:8000/media}
   SUPABASE_URL: ${SUPABASE_URL:-}
   SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
   SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-recenthink_user_profile_picture}
+  SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
+  SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
+  SUPER_ADMIN_FIRST_NAME: ${SUPER_ADMIN_FIRST_NAME:-}
+  SUPER_ADMIN_LAST_NAME: ${SUPER_ADMIN_LAST_NAME:-}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+  RUN_MIGRATIONS: "false"
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 x-service-base: &service-base
   restart: unless-stopped
   networks:
     - recentthink
   env_file:
-    - .env
+    - path: .env
+      required: false
+    - path: .env.docker
+      required: false
   environment:
     <<: *common-env
-  depends_on:
-    postgres:
-      condition: service_healthy
+  logging: *default-logging
 
 services:
   postgres:
@@ -41,20 +72,55 @@ services:
     container_name: recentthink-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: recentthink
-      POSTGRES_PASSWORD: recentthink
-      POSTGRES_DB: recentthink
+      POSTGRES_USER: ${POSTGRES_USER:-recentthink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recentthink}
+      POSTGRES_DB: ${POSTGRES_DB:-recentthink}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - app_logs:/var/log/recentthink
     networks:
       - recentthink
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U recentthink -d recentthink"]
-      interval: 10s
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-recentthink} -d ${POSTGRES_DB:-recentthink}",
+        ]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging: *default-logging
+
+  migrate:
+    container_name: recentthink-migrate
+    build:
+      context: .
+      dockerfile: docker/migrate.Dockerfile
+    restart: "no"
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.docker
+        required: false
+    environment:
+      <<: *common-env
+    networks:
+      - recentthink
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
 
   auth_service:
     <<: *service-base
@@ -62,8 +128,35 @@ services:
     build:
       context: .
       dockerfile: services/auth_service/Dockerfile
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
 
   user_service:
     <<: *service-base
@@ -71,34 +164,38 @@ services:
     build:
       context: .
       dockerfile: services/user_service/Dockerfile
-    ports:
-      - "8002:8002"
-
-  admin_service:
-    <<: *service-base
-    container_name: recentthink-admin
-    build:
-      context: .
-      dockerfile: services/admin_service/Dockerfile
-    ports:
-      - "8003:8003"
-
-  ai_service:
-    <<: *service-base
-    container_name: recentthink-ai
-    build:
-      context: .
-      dockerfile: services/ai_service/Dockerfile
-    ports:
-      - "8004:8004"
-    environment:
-      <<: *common-env
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      AVAILABLE_MODELS: ${AVAILABLE_MODELS:-google/gemini-2.5-flash,deepseek/deepseek-chat,meta-llama/llama-3.3-70b-instruct,openai/gpt-4o,nvidia/llama-3.1-nemotron-ultra-253b-v1}
-      USAGE_SERVICE_URL: http://usage_service:8005
-      AUTH_SERVICE_URL: http://auth_service:8001
+    expose:
+      - "8002"
+    volumes:
+      - app_logs:/app/logs
+      - app_storage:/app/storage
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      auth_service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
 
   usage_service:
     <<: *service-base
@@ -106,8 +203,121 @@ services:
     build:
       context: .
       dockerfile: services/usage_service/Dockerfile
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      user_service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 384M
+        reservations:
+          cpus: "0.10"
+          memory: 96M
+
+  ai_service:
+    <<: *service-base
+    container_name: recentthink-ai
+    build:
+      context: .
+      dockerfile: services/ai_service/Dockerfile
+    expose:
+      - "8004"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 35s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      usage_service:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  admin_service:
+    <<: *service-base
+    container_name: recentthink-admin
+    build:
+      context: .
+      dockerfile: services/admin_service/Dockerfile
+    expose:
+      - "8003"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai_service:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+      user_service:
+        condition: service_healthy
+      usage_service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
 
   gateway:
     <<: *service-base
@@ -116,27 +326,44 @@ services:
       context: .
       dockerfile: services/gateway/Dockerfile
     ports:
-      - "8000:8000"
-    environment:
-      <<: *common-env
-      AUTH_SERVICE_URL: http://auth_service:8001
-      USER_SERVICE_URL: http://user_service:8002
-      ADMIN_SERVICE_URL: http://admin_service:8003
-      AI_SERVICE_URL: http://ai_service:8004
-      USAGE_SERVICE_URL: http://usage_service:8005
+      - "${GATEWAY_PORT:-8000}:8000"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       auth_service:
-        condition: service_started
+        condition: service_healthy
       user_service:
-        condition: service_started
-      admin_service:
-        condition: service_started
-      ai_service:
-        condition: service_started
+        condition: service_healthy
       usage_service:
-        condition: service_started
+        condition: service_healthy
+      ai_service:
+        condition: service_healthy
+      admin_service:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.15"
+          memory: 128M
 
 networks:
   recentthink:
@@ -146,3 +373,7 @@ networks:
 volumes:
   postgres_data:
     name: recentthink-postgres-data
+  app_logs:
+    name: recentthink-logs
+  app_storage:
+    name: recentthink-storage

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 from uuid import UUID
 
 from app.coaching.registry import get_mode_registry
-from app.coaching.prompt_loader import get_mode_prompt_loader
 from app.agents.shared.coder.module import CoderModule
 from app.agents.shared.code_explainer.module import CodeExplainerModule
 from app.agents.shared.evaluator.module import EvaluatorModule
@@ -20,8 +18,11 @@ from app.agents.shared.llm_response_normalizer import (
 from app.agents.shared.planner.planner import Planner
 from app.agents.shared.teacher.module import TeacherModule
 from app.clients.openrouter import OpenRouterClient
-from app.core.config import get_ai_settings
+from app.core.config import feature_max_tokens_map, get_ai_settings
+from app.core.feature_tokens import TOP_LEVEL_SECTIONS, resolve_feature_max_tokens
+from app.cache import CacheManager, get_cache_manager
 from app.models.enums import AIFeature, AgentRunStatus, MessageRole, ModuleName, SessionStatus, WorkflowStatus
+from app.prompts.builder import PromptBuilder
 from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
 from app.schemas.ai import ChatRequest, ModuleResponse, PlannerOutput
@@ -34,6 +35,13 @@ from app.services.prompt_loader import PromptLoader
 from app.services.usage.usage_tracker import UsageTracker
 from app.utils.cost_calculator import CostCalculator
 from app.utils.prompt_sanitizer import sanitize_user_input
+from app.utils.section_tokens import (
+    estimate_section_tokens,
+    filter_payload_to_sections,
+    merge_llm_payload,
+    resolve_prior_payload,
+)
+from shared.config import get_settings
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -68,6 +76,7 @@ class WorkflowNodes:
         evaluator: EvaluatorModule | None = None,
         llm_client: OpenRouterClient | None = None,
         prompt_loader: PromptLoader | None = None,
+        prompt_builder: PromptBuilder | None = None,
         json_validator: JSONValidator | None = None,
         cost_calculator: CostCalculator | None = None,
         session_repo: AISessionRepository | None = None,
@@ -75,6 +84,7 @@ class WorkflowNodes:
         execution_trace: ExecutionTraceService | None = None,
         memory_service: ConversationMemoryService | None = None,
         usage_tracker: UsageTracker | None = None,
+        cache_manager: CacheManager | None = None,
     ) -> None:
         self._planner = planner or Planner()
         self._teacher = teacher or TeacherModule()
@@ -83,6 +93,7 @@ class WorkflowNodes:
         self._evaluator = evaluator or EvaluatorModule()
         self._llm = llm_client or OpenRouterClient()
         self._prompts = prompt_loader or PromptLoader()
+        self._prompt_builder = prompt_builder or PromptBuilder(prompt_loader=self._prompts)
         self._validator = json_validator or JSONValidator()
         self._cost = cost_calculator or CostCalculator()
         self._sessions = session_repo
@@ -90,6 +101,7 @@ class WorkflowNodes:
         self._trace = execution_trace
         self._memory = memory_service
         self._usage = usage_tracker
+        self._cache = cache_manager or get_cache_manager()
         self._ai_settings = get_ai_settings()
 
     async def planner_node(self, state: AIWorkflowState) -> dict[str, Any]:
@@ -104,7 +116,8 @@ class WorkflowNodes:
                 context=state.get("context"),
                 model=state.get("model"),
                 temperature=state.get("temperature", 0.2),
-                max_tokens=state.get("max_tokens", 4096),
+                max_tokens=state.get("max_tokens"),
+                requested_sections=state.get("requested_sections"),
             )
             planner_output = self._planner.plan(request, mode_id=state.get("mode_id"))
             session = self._resolve_session(
@@ -112,6 +125,15 @@ class WorkflowNodes:
                 request=request,
                 planner_output=planner_output,
             )
+            modules_to_run = [m.value for m in planner_output.modules]
+            requested = state.get("requested_sections")
+            if requested:
+                requested_top = [s for s in requested if s in TOP_LEVEL_SECTIONS]
+                if requested_top:
+                    modules_to_run = [m for m in modules_to_run if m in requested_top]
+                elif ModuleName.TEACHER.value in modules_to_run:
+                    # Nested-only regeneration still flows through teacher formatting.
+                    modules_to_run = [ModuleName.TEACHER.value]
             elapsed = int((time.perf_counter() - start) * 1000)
             self._complete_trace(
                 state,
@@ -126,7 +148,7 @@ class WorkflowNodes:
             return {
                 "session_id": str(session.id),
                 "planner_output": planner_output.model_dump(),
-                "modules_to_run": [m.value for m in planner_output.modules],
+                "modules_to_run": modules_to_run,
                 "feature_name": planner_output.feature.value,
                 "memory_context": memory_context,
                 "status": WorkflowStatus.IN_PROGRESS.value,
@@ -153,20 +175,107 @@ class WorkflowNodes:
         planner = PlannerOutput.model_validate(state.get("planner_output") or {})
         mode_registry = get_mode_registry()
         mode_cfg = mode_registry.resolve(state.get("mode_id"))
-        # Curriculum-style features must not inherit LeetCode coaching-mode prompts.
-        if planner.feature in {AIFeature.COURSE_GENERATOR, AIFeature.DSA_PATTERN}:
-            mode_prompt = ""
-        else:
-            mode_prompt = get_mode_prompt_loader().load(mode_cfg.analyze_prompt or mode_cfg.metadata.id)
-        schema_prompt = self._prompts.load(feature=planner.feature.value, module_name="single_llm")
-        system_prompt = "\n\n".join([part for part in (mode_prompt, schema_prompt) if part])
-        user_prompt = self._build_user_prompt(state, planner)
+        requested_sections = state.get("requested_sections")
+        built = self._prompt_builder.build(
+            planner=planner,
+            message=state.get("message", ""),
+            context=state.get("context") if isinstance(state.get("context"), dict) else None,
+            memory_context=state.get("memory_context") if isinstance(state.get("memory_context"), dict) else None,
+            title=state.get("title"),
+            mode_id=state.get("mode_id"),
+            requested_sections=requested_sections,
+        )
+        system_prompt = built.system_prompt
+        user_prompt = built.user_prompt
         llm_calls = 0
         max_json_retries = self._ai_settings.json_validation_max_retries
         response = None
         last_validation_error: str | None = None
+        shared_settings = get_settings()
+        model_name = state.get("model") or shared_settings.openrouter_model
+        prompt_version = self._ai_settings.prompt_default_version
+        max_tokens = resolve_feature_max_tokens(
+            planner.feature.value,
+            override=state.get("max_tokens"),
+            requested_sections=requested_sections,
+            limits=feature_max_tokens_map(self._ai_settings),
+        )
+        cache_key = self._cache.build_key(
+            feature=planner.feature.value,
+            model=str(model_name),
+            prompt_version=prompt_version,
+            context=state.get("context") if isinstance(state.get("context"), dict) else None,
+            metadata=planner.metadata if isinstance(planner.metadata, dict) else None,
+            message=state.get("message", ""),
+        )
+        prior_payload = resolve_prior_payload(
+            context=state.get("context") if isinstance(state.get("context"), dict) else None,
+            memory_context=state.get("memory_context") if isinstance(state.get("memory_context"), dict) else None,
+        )
 
         try:
+            if cache_key is not None:
+                cached = self._cache.get(cache_key)
+                if isinstance(cached, dict) and cached:
+                    elapsed = int((time.perf_counter() - start) * 1000)
+                    working = cached
+                    if requested_sections:
+                        # Reuse full cache; emit only requested sections (no OpenRouter).
+                        working = merge_llm_payload(
+                            prior_payload or cached,
+                            filter_payload_to_sections(cached, requested_sections),
+                            requested_sections=requested_sections,
+                        )
+                    section_tokens = estimate_section_tokens(
+                        filter_payload_to_sections(cached, requested_sections) if requested_sections else cached,
+                        completion_tokens=0,
+                        requested_sections=requested_sections,
+                    )
+                    self._complete_trace(
+                        state,
+                        trace_entry,
+                        ModuleName.OPENROUTER,
+                        AgentRunStatus.SUCCESS,
+                        execution_time_ms=elapsed,
+                        latency_ms=elapsed,
+                        input_tokens=0,
+                        output_tokens=0,
+                        estimated_cost=0.0,
+                        trace_metadata={
+                            "model": model_name,
+                            "provider": "cache",
+                            "llm_calls": 0,
+                            "cache_hit": True,
+                            "cache_key": cache_key,
+                            "requested_sections": requested_sections,
+                            "max_tokens": max_tokens,
+                        },
+                    )
+                    return {
+                        "llm_raw": working,
+                        "teacher_output": working.get("teacher"),
+                        "coder_output": working.get("coder"),
+                        "evaluator_output": working.get("evaluator"),
+                        "latency_ms": elapsed,
+                        "section_tokens": section_tokens,
+                        "regenerated_sections": list(requested_sections) if requested_sections else None,
+                        "token_usage": {
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": 0,
+                            "model": model_name,
+                            "provider": "cache",
+                            "temperature": float(
+                                state.get("temperature", mode_cfg.generation.temperature),
+                            ),
+                            "estimated_cost_usd": 0.0,
+                            "estimated_cost_inr": 0.0,
+                            "cache_hit": True,
+                            "section_tokens": section_tokens,
+                            "max_tokens": max_tokens,
+                        },
+                    }
+
             validated_payload: dict[str, Any] | None = None
             for json_attempt in range(max_json_retries + 1):
                 llm_calls += 1
@@ -175,7 +284,7 @@ class WorkflowNodes:
                     user_prompt=user_prompt,
                     model=state.get("model"),
                     temperature=float(state.get("temperature", mode_cfg.generation.temperature)),
-                    max_tokens=int(state.get("max_tokens", mode_cfg.generation.max_tokens)),
+                    max_tokens=max_tokens,
                     top_p=mode_cfg.generation.top_p,
                     frequency_penalty=mode_cfg.generation.frequency_penalty,
                     presence_penalty=mode_cfg.generation.presence_penalty,
@@ -193,25 +302,27 @@ class WorkflowNodes:
                 normalized = normalize_unified_llm_payload(
                     parsed,
                     planner_metadata=planner.metadata,
+                    feature_name=planner.feature.value,
                 )
-                # Planner metadata can pad teacher fields; still require real feature payload.
-                feature_empty = feature_payload_missing_content(planner.feature.value, normalized)
-                if (is_llm_response_empty(normalized) or feature_empty) and json_attempt < max_json_retries:
-                    last_validation_error = (
-                        "LLM returned empty feature content"
-                        if feature_empty
-                        else "LLM returned empty teacher/coder content"
-                    )
-                    logger.warning(
-                        "llm_empty_response_retry",
-                        extra={"attempt": json_attempt + 1, "feature": planner.feature.value},
-                    )
-                    continue
+                # When generating a subset, empty unrelated top-level fields are expected.
+                if not requested_sections:
+                    feature_empty = feature_payload_missing_content(planner.feature.value, normalized)
+                    if (is_llm_response_empty(normalized) or feature_empty) and json_attempt < max_json_retries:
+                        last_validation_error = (
+                            "LLM returned empty feature content"
+                            if feature_empty
+                            else "LLM returned empty teacher/coder content"
+                        )
+                        logger.warning(
+                            "llm_empty_response_retry",
+                            extra={"attempt": json_attempt + 1, "feature": planner.feature.value},
+                        )
+                        continue
 
-                if feature_empty:
-                    last_validation_error = "LLM returned empty feature content"
-                    validated_payload = None
-                    break
+                    if feature_empty:
+                        last_validation_error = "LLM returned empty feature content"
+                        validated_payload = None
+                        break
 
                 validated_payload = normalized
                 break
@@ -235,9 +346,33 @@ class WorkflowNodes:
                     "status": WorkflowStatus.PARTIAL.value,
                 }
 
+            generated_only = (
+                filter_payload_to_sections(validated_payload, requested_sections)
+                if requested_sections
+                else validated_payload
+            )
+            merged_payload = merge_llm_payload(
+                prior_payload,
+                generated_only if requested_sections else validated_payload,
+                requested_sections=requested_sections,
+            )
+
+            if cache_key is not None:
+                # Always store the full merged payload so future hits can slice sections.
+                self._cache.set(
+                    cache_key,
+                    merged_payload if requested_sections and prior_payload else validated_payload,
+                    ttl=self._cache.ttl_for_feature(planner.feature.value),
+                )
+
             cost = self._cost.estimate_request_cost(
                 input_tokens=response.prompt_tokens,
                 output_tokens=response.completion_tokens,
+            )
+            section_tokens = estimate_section_tokens(
+                generated_only,
+                completion_tokens=response.completion_tokens,
+                requested_sections=requested_sections,
             )
             self._complete_trace(
                 state,
@@ -249,14 +384,25 @@ class WorkflowNodes:
                 input_tokens=response.prompt_tokens,
                 output_tokens=response.completion_tokens,
                 estimated_cost=cost.usd,
-                trace_metadata={"model": response.model, "provider": response.provider, "llm_calls": llm_calls},
+                trace_metadata={
+                    "model": response.model,
+                    "provider": response.provider,
+                    "llm_calls": llm_calls,
+                    "cache_hit": False,
+                    "cache_key": cache_key,
+                    "requested_sections": requested_sections,
+                    "max_tokens": max_tokens,
+                    "section_tokens": section_tokens,
+                },
             )
             return {
-                "llm_raw": validated_payload,
-                "teacher_output": validated_payload.get("teacher"),
-                "coder_output": validated_payload.get("coder"),
-                "evaluator_output": validated_payload.get("evaluator"),
+                "llm_raw": merged_payload,
+                "teacher_output": merged_payload.get("teacher"),
+                "coder_output": merged_payload.get("coder"),
+                "evaluator_output": merged_payload.get("evaluator"),
                 "latency_ms": response.latency_ms,
+                "section_tokens": section_tokens,
+                "regenerated_sections": list(requested_sections) if requested_sections else None,
                 "token_usage": {
                     "input_tokens": response.prompt_tokens,
                     "output_tokens": response.completion_tokens,
@@ -266,6 +412,9 @@ class WorkflowNodes:
                     "temperature": response.temperature,
                     "estimated_cost_usd": cost.usd,
                     "estimated_cost_inr": cost.inr,
+                    "cache_hit": False,
+                    "section_tokens": section_tokens,
+                    "max_tokens": max_tokens,
                 },
             }
         except Exception as exc:
@@ -337,6 +486,11 @@ class WorkflowNodes:
                     latency_ms=int(state.get("latency_ms", 0)),
                     execution_time_ms=int(state.get("execution_time_ms", 0)),
                     estimated_cost=float(token_usage.get("estimated_cost_usd", 0)),
+                    section_tokens=(
+                        state.get("section_tokens")
+                        or token_usage.get("section_tokens")
+                        or None
+                    ),
                 )
 
             self._update_memory(state)
@@ -560,124 +714,3 @@ class WorkflowNodes:
                     "estimated_cost": estimated_cost,
                 },
             )
-
-    @staticmethod
-    def _build_user_prompt(state: AIWorkflowState, planner: PlannerOutput) -> str:
-        sections = [
-            f"Feature: {planner.feature.value}",
-            f"Classification: {planner.metadata.get('classification', 'general')}",
-            f"Modules: {', '.join(module.value for module in planner.modules)}",
-        ]
-        metadata = planner.metadata or {}
-        if planner.feature.value == "leetcode":
-            context = state.get("context") or {}
-            title = context.get("title") or state.get("title") or metadata.get("problem_slug") or "Unknown"
-            problem_lines = [
-                f"Title: {title}",
-                f"Difficulty: {metadata.get('difficulty') or context.get('difficulty') or 'Unknown'}",
-                f"Category: {metadata.get('problem_category', 'General')}",
-                f"Patterns: {', '.join(metadata.get('patterns') or context.get('topics') or [])}",
-            ]
-            objectives = metadata.get("learning_objectives") or []
-            if objectives:
-                problem_lines.append("Learning objectives:")
-                problem_lines.extend(f"- {item}" for item in objectives)
-            plan = metadata.get("execution_plan") or []
-            if plan:
-                problem_lines.append("Execution plan:")
-                problem_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
-            sections.append("Problem metadata:\n" + "\n".join(problem_lines))
-        if planner.feature.value == "course_generator":
-            weeks = int(metadata.get("weeks") or max(4, int(metadata.get("duration_days") or 60) // 7))
-            min_lessons = weeks * 2
-            course_lines = [
-                f"Skill: {metadata.get('skill', 'General')}",
-                f"Goal: {metadata.get('goal', '')}",
-                f"Level: {metadata.get('current_level') or metadata.get('difficulty', 'Beginner')}",
-                f"Target level: {metadata.get('target_level', 'Advanced')}",
-                f"Duration: {metadata.get('duration_days', 60)} days @ {metadata.get('daily_hours', 2)}h/day",
-                f"Estimated study hours: {metadata.get('estimated_study_hours', 0)}",
-                f"Learning style: {metadata.get('learning_style', 'Hands-on')}",
-                f"Instruction language: {metadata.get('language', 'English')}",
-                f"Programming language: {metadata.get('programming_language', 'Python')}",
-                "",
-                "COMPLETENESS REQUIREMENTS (do not skip):",
-                f"- roadmap for all {weeks} weeks with daily_topics",
-                f"- >= {min_lessons} full lessons (concept_explanation + examples + analogies)",
-                f"- >= {weeks} quizzes with 5+ questions and flashcards each",
-                f"- >= {weeks} assignments with tasks + coding_exercises",
-                "- 4 projects: beginner, intermediate, advanced, resume",
-                "- weekly assessments + one final assessment",
-                "- 8+ resources, learning_tips, adaptive recommendations",
-                "- Populate course.lessons / quizzes / assignments / projects / assessments fully",
-            ]
-            if metadata.get("topics_include"):
-                course_lines.append(f"Include topics: {', '.join(metadata['topics_include'])}")
-            if metadata.get("topics_exclude"):
-                course_lines.append(f"Exclude topics: {', '.join(metadata['topics_exclude'])}")
-            objectives = metadata.get("learning_objectives") or []
-            if objectives:
-                course_lines.append("Learning objectives:")
-                course_lines.extend(f"- {item}" for item in objectives)
-            plan = metadata.get("execution_plan") or []
-            if plan:
-                course_lines.append("Execution plan:")
-                course_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
-            sections.append("Course request metadata:\n" + "\n".join(course_lines))
-        if planner.feature.value == "dsa_pattern":
-            pattern_lines = [
-                f"Pattern: {metadata.get('pattern', 'General')}",
-                f"Category: {metadata.get('category', 'General')}",
-                f"Level / difficulty: {metadata.get('difficulty') or metadata.get('level', 'Beginner')}",
-                f"Preferred language: {metadata.get('language', 'Python')}",
-                f"Learning style: {metadata.get('learning_style', 'Visual')}",
-                f"Estimated study time: {metadata.get('estimated_study_time', '')}",
-                "",
-                "COMPLETENESS REQUIREMENTS (do not skip):",
-                "- overview with beginner/intermediate/advanced explanations",
-                "- mental_model with analogies",
-                "- recognition keywords/signals/rules/decision_tree/checklist",
-                "- visualization (ASCII + step-by-step, frontend-friendly)",
-                "- reusable templates for Python, Java, C++, JavaScript, Go, Rust, C#",
-                "- easy_example, medium_example, hard_example with full walkthroughs",
-                "- interview_tips, pattern_comparison, practice sets, quiz",
-                "- next_pattern_recommendation",
-                "- Populate dsa_pattern fully — focus on HOW TO IDENTIFY the pattern",
-            ]
-            objectives = metadata.get("learning_objectives") or []
-            if objectives:
-                pattern_lines.append("Learning objectives:")
-                pattern_lines.extend(f"- {item}" for item in objectives)
-            plan = metadata.get("execution_plan") or []
-            if plan:
-                pattern_lines.append("Execution plan:")
-                pattern_lines.extend(f"{index}. {step}" for index, step in enumerate(plan, start=1))
-            sections.append("DSA pattern request metadata:\n" + "\n".join(pattern_lines))
-        context = state.get("context")
-        if context:
-            sections.append(f"Context:\n{json.dumps(context, indent=2, default=str)}")
-        memory_context = state.get("memory_context")
-        if memory_context:
-            if memory_context.get("summary"):
-                sections.append(f"Conversation summary:\n{memory_context['summary']}")
-            if memory_context.get("planner_output"):
-                sections.append(
-                    f"Prior planner output:\n{json.dumps(memory_context['planner_output'], indent=2, default=str)}",
-                )
-            if memory_context.get("teacher_output"):
-                sections.append(
-                    f"Prior teacher output:\n{json.dumps(memory_context['teacher_output'], indent=2, default=str)}",
-                )
-            if memory_context.get("recent_messages"):
-                sections.append(
-                    f"Recent messages:\n{json.dumps(memory_context['recent_messages'], indent=2, default=str)}",
-                )
-            remaining = {
-                k: v
-                for k, v in memory_context.items()
-                if k not in {"summary", "planner_output", "teacher_output", "recent_messages", "context"}
-            }
-            if remaining:
-                sections.append(f"Memory:\n{json.dumps(remaining, indent=2, default=str)}")
-        sections.append(f"User request:\n{state.get('message', '')}")
-        return "\n\n".join(sections)

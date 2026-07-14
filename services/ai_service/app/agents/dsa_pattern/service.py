@@ -112,20 +112,20 @@ class DsaPatternService:
             resolved_mode = request.mode_id
             mode_cfg = get_mode_registry().resolve(resolved_mode)
 
-            max_tokens = max(int(mode_cfg.generation.max_tokens), 16384)
-            max_tokens = min(max_tokens, 32000)
-
+            context = build_pattern_context(request)
+            if request.prior_response:
+                context = {**context, "prior_llm_raw": request.prior_response}
             chat_response = await self._platform.chat(
                 user,
                 ChatRequest(
                     feature=AIFeature.DSA_PATTERN,
                     message=build_chat_message(request),
                     title=f"DSA Pattern: {request.pattern}",
-                    context=build_pattern_context(request),
+                    context=context,
                     model=resolved_model,
                     mode_id=resolved_mode,
                     temperature=min(mode_cfg.generation.temperature, 0.35),
-                    max_tokens=max_tokens,
+                    requested_sections=request.requested_sections,
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:

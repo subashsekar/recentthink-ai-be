@@ -27,6 +27,14 @@ class GeneratePatternRequest(BaseModel):
     learning_style: str = Field(default="Visual", max_length=100)
     model_id: str | None = Field(default=None, max_length=255)
     mode_id: str | None = Field(default=None, max_length=50)
+    requested_sections: list[str] | None = Field(
+        default=None,
+        description='Incremental generation, e.g. ["recognition", "practice"].',
+    )
+    prior_response: dict | None = Field(
+        default=None,
+        description="Prior unified LLM payload for section reuse.",
+    )
 
     @field_validator("pattern", "level", "language", "learning_style")
     @classmethod

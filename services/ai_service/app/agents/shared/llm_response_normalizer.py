@@ -98,26 +98,83 @@ def _dsa_pattern_has_content(pattern: dict[str, Any]) -> bool:
     return False
 
 
+def _project_feature_payload(
+    payload: dict[str, Any],
+    *,
+    feature_name: str | None,
+) -> dict[str, Any]:
+    """Map shared envelope ``feature`` onto legacy course/dsa_pattern/interview keys."""
+    projected = dict(payload)
+    feature_blob = _as_dict(projected.get("feature"))
+    name = (feature_name or "").strip().lower()
+
+    if name in {"course_generator", "course-generator", "learning_path"}:
+        legacy = _as_dict(projected.get("course"))
+        if _course_has_content(legacy):
+            projected["course"] = legacy
+        elif feature_blob:
+            projected["course"] = feature_blob
+        else:
+            projected["course"] = legacy
+    elif name in {"dsa_pattern", "dsa-pattern", "pattern_coach"}:
+        legacy = _as_dict(projected.get("dsa_pattern"))
+        merged = legacy if _dsa_pattern_has_content(legacy) else dict(feature_blob)
+        # Allow examples nested under feature.examples.
+        examples = _as_dict(merged.get("examples"))
+        if examples:
+            for key in ("easy_example", "medium_example", "hard_example"):
+                if not _as_dict(merged.get(key)) and _as_dict(examples.get(key)):
+                    merged[key] = examples[key]
+        projected["dsa_pattern"] = merged
+    elif name in {"interview"}:
+        legacy = _as_dict(projected.get("interview"))
+        projected["interview"] = legacy if _has_meaningful_values(legacy) else feature_blob
+
+    # Merge LeetCode/HackerRank feature extras into evaluator when present.
+    if name in {"leetcode", "hackerrank"} and feature_blob:
+        evaluator = _as_dict(projected.get("evaluator"))
+        complexity = _as_dict(feature_blob.get("complexity"))
+        if not evaluator.get("time_complexity") and complexity.get("time"):
+            evaluator["time_complexity"] = complexity["time"]
+        if not evaluator.get("space_complexity") and complexity.get("space"):
+            evaluator["space_complexity"] = complexity["space"]
+        if not evaluator.get("mistakes") and feature_blob.get("mistakes"):
+            evaluator["mistakes"] = list(feature_blob["mistakes"])
+        projected["evaluator"] = evaluator
+
+    return projected
+
+
 def is_llm_response_empty(payload: dict[str, Any]) -> bool:
     """Return True when teacher, coder, course, and dsa_pattern lack usable content."""
     teacher = _as_dict(payload.get("teacher"))
     coder = _as_dict(payload.get("coder"))
     course = _as_dict(payload.get("course"))
     dsa_pattern = _as_dict(payload.get("dsa_pattern"))
+    feature = _as_dict(payload.get("feature"))
+    interview = _as_dict(payload.get("interview"))
     return (
         not _teacher_has_content(teacher)
         and not _coder_has_content(coder)
         and not _course_has_content(course)
         and not _dsa_pattern_has_content(dsa_pattern)
+        and not _has_meaningful_values(feature)
+        and not _has_meaningful_values(interview)
     )
 
 
 def feature_payload_missing_content(feature: str, payload: dict[str, Any]) -> bool:
     """Feature-specific emptiness (ignores planner-enriched teacher stubs)."""
     if feature in {"dsa_pattern", "dsa-pattern", "pattern_coach"}:
-        return not _dsa_pattern_has_content(_as_dict(payload.get("dsa_pattern")))
+        pattern = _as_dict(payload.get("dsa_pattern")) or _as_dict(payload.get("feature"))
+        return not _dsa_pattern_has_content(pattern)
     if feature in {"course_generator", "course-generator", "learning_path"}:
-        return not _course_has_content(_as_dict(payload.get("course")))
+        course = _as_dict(payload.get("course")) or _as_dict(payload.get("feature"))
+        return not _course_has_content(course)
+    if feature in {"interview"}:
+        return not _has_meaningful_values(
+            _as_dict(payload.get("interview")) or _as_dict(payload.get("feature")),
+        )
     return is_llm_response_empty(payload)
 
 
@@ -255,12 +312,18 @@ def normalize_unified_llm_payload(
     payload: dict[str, Any],
     *,
     planner_metadata: dict[str, Any] | None = None,
+    feature_name: str | None = None,
 ) -> dict[str, Any]:
-    """Map common LLM key variants to the schema expected by processing modules."""
+    """Map shared envelope (+ legacy keys) to the schema expected by processors."""
+    projected = _project_feature_payload(payload, feature_name=feature_name)
     return {
-        "teacher": _normalize_teacher(_as_dict(payload.get("teacher")), planner_metadata),
-        "coder": _normalize_coder(_as_dict(payload.get("coder"))),
-        "evaluator": _normalize_evaluator(_as_dict(payload.get("evaluator"))),
-        "course": _normalize_course(_as_dict(payload.get("course"))),
-        "dsa_pattern": _normalize_dsa_pattern(_as_dict(payload.get("dsa_pattern"))),
+        "metadata": _as_dict(projected.get("metadata")),
+        "planner": _as_dict(projected.get("planner")),
+        "teacher": _normalize_teacher(_as_dict(projected.get("teacher")), planner_metadata),
+        "coder": _normalize_coder(_as_dict(projected.get("coder"))),
+        "evaluator": _normalize_evaluator(_as_dict(projected.get("evaluator"))),
+        "feature": _as_dict(projected.get("feature")),
+        "course": _normalize_course(_as_dict(projected.get("course"))),
+        "dsa_pattern": _normalize_dsa_pattern(_as_dict(projected.get("dsa_pattern"))),
+        "interview": _as_dict(projected.get("interview")),
     }
