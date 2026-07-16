@@ -1,256 +1,177 @@
-# RecentThink
+# RecentThink Backend
 
-Portfolio **microservice AI platform** for interview and coding practice
-mentorship. Six FastAPI services sit behind an API Gateway, with shared
-configuration, PostgreSQL persistence, JWT auth, admin tooling, usage metering,
-and streaming chat over SSE.
+RecentThink is a FastAPI microservice backend for AI-assisted interview and
+coding practice. It provides authentication, user profiles, administration,
+AI chat, usage tracking, and an API gateway backed by PostgreSQL.
 
-**Products (AI Service):** LeetCode Mentor, HackerRank Mentor, DSA Pattern Coach,
-Course Generator. Chat/SSE streaming is available under `/chat/{feature}/*`.
-AI Service completion: **~95%** — see
-[docs/AI_SERVICE_COMPLETION_REPORT.md](docs/AI_SERVICE_COMPLETION_REPORT.md).
-Interview Trainer is intentionally **not** implemented (out of scope for this
-portfolio).
+## Services
 
-## Technology stack
+| Service | Internal port | Purpose |
+| --- | ---: | --- |
+| Gateway | 8000 | Public entry point |
+| Auth | 8001 | Accounts, JWTs, and admin authentication |
+| User | 8002 | Profiles and media |
+| Admin | 8003 | Administration and analytics |
+| AI | 8004 | AI products and streaming chat |
+| Usage | 8005 | Usage metering |
+| PostgreSQL | 5432 | Persistent data |
 
-| Concern | Choice |
-|--------------------------|-----------------------------------------|
-| Language | Python 3.13 |
-| Web framework | FastAPI + Uvicorn |
-| ORM / migrations | SQLAlchemy 2.x + Alembic |
-| Database | PostgreSQL 16 (via `psycopg` 3) |
-| Configuration | Pydantic Settings (`shared/config.py`) |
-| Packaging / environments | uv |
-| AI orchestration | LangGraph + OpenRouter |
-| Auth | JWT (HS256), refresh rotation, bcrypt |
-| Inter-service auth | `X-Internal-Service-Token` |
-| Testing | Pytest, pytest-asyncio, pytest-cov |
-| Quality | Ruff, Black, isort, mypy (strict) |
-| Containers | Docker + Docker Compose |
-| Monitoring | Sentry (optional) |
+Docker publishes the gateway at `http://localhost:8085`. The other application
+services remain private to the Docker network.
 
-## Folder structure
+## Requirements
 
-```
-recentthink/
-├── services/                 # One folder per microservice (each may include Dockerfile)
-│   ├── gateway/              # API gateway               (:8000)
-│   ├── auth_service/         # Auth + identity           (:8001)
-│   ├── user_service/         # Profiles / avatars        (:8002)
-│   ├── admin_service/        # Admin aggregation         (:8003)
-│   ├── ai_service/           # AI products + chat/SSE    (:8004)
-│   ├── usage_service/        # Usage metering            (:8005)
-│   └── conftest.py           # Cross-service test isolation
-│   # each service: app/{api,core,services,repositories,models,
-│   #                     schemas,dependencies,middleware,utils}, tests/
-├── shared/                   # Reusable library shared by all services
-│   ├── config.py             # Pydantic BaseSettings (single source of truth)
-│   ├── database/             # Engine, SessionLocal, Base, get_db
-│   ├── models/               # TimestampedModel + mixins
-│   ├── schemas/              # Shared Pydantic schemas (health, ...)
-│   ├── security/             # Passwords, JWT, service token
-│   ├── exceptions/           # Domain exception types
-│   ├── logging/              # Logger factory
-│   ├── constants/ utils/ common/
-│   └── py.typed              # PEP 561 marker (shared ships type hints)
-├── migrations/               # Alembic environment + versioned migrations
-├── infrastructure/           # IaC / deployment placeholders
-├── scripts/                  # Operational scripts (e.g. seed_admin.py)
-├── docs/                     # Architecture & workflow documentation
-├── tests/                    # Root + CRUD integration tests
-├── .github/workflows/        # CI pipeline
-├── docker-compose.yml        # Postgres + migrate + all six services
-├── .env.docker               # Docker networking defaults (safe to commit)
-├── docker/migrate.Dockerfile # One-shot Alembic migration image
-├── alembic.ini
-├── pyproject.toml            # Deps + tool config (Ruff/Black/isort/mypy/pytest)
-├── Makefile
-└── uv.lock
-```
+- Docker Desktop with Docker Compose
+- Git
+- Optional for local development: Python 3.13 and
+  [uv](https://docs.astral.sh/uv/)
 
-More detail lives in [`docs/`](docs/): [architecture](docs/architecture.md),
-[database](docs/database.md), [environment](docs/environment.md),
-[docker](docs/docker.md), [development](docs/development.md),
-[testing](docs/testing.md), [conversation chat](docs/conversation-chat.md),
-[backend completion](docs/BACKEND_COMPLETION_REPORT.md).
+## Quick start with Docker
 
-## Microservice architecture
+1. Clone the repository and enter it:
 
-Each service is a self-contained FastAPI application following clean
-architecture layering inside `app/`:
+   ```powershell
+   git clone <repository-url>
+   cd recentthink-ai-be
+   ```
 
-- `api/` — HTTP routes (delivery layer)
-- `services/` — use-case / business logic
-- `repositories/` — data access (SQLAlchemy)
-- `models/` — ORM entities
-- `schemas/` — Pydantic request/response models
-- `core/` — service-local configuration (name, port)
-- `dependencies/`, `middleware/`, `utils/` — cross-cutting concerns
+2. Create your local environment file:
 
-All services import configuration and infrastructure from the `shared`
-package, so there is no duplicated config or database wiring.
+   ```powershell
+   Copy-Item .env.example .env
+   ```
 
-### Ports
+3. Open `.env` and replace every `get-your-*` placeholder with your own value.
+   Do not commit `.env`.
 
-| Service | Port | `GET /` health | Docker host publish |
-|-----------------|------|----------------|---------------------|
-| Gateway | 8000 | ✅ | **yes** (`:8000`) |
-| Auth Service | 8001 | ✅ (+ `GET /health/db`) | internal only |
-| User Service | 8002 | ✅ | internal only |
-| Admin Service | 8003 | ✅ | internal only |
-| AI Service | 8004 | ✅ | internal only |
-| Usage Service | 8005 | ✅ | internal only |
-| PostgreSQL | 5432 | `pg_isready` | **yes** (`:5432`) |
+4. Build and start the stack:
 
-Every service exposes `GET /` returning `{"service": "<name>", "status": "healthy"}`.
-In Docker, call non-gateway services through the gateway or via `docker compose exec`.
+   ```powershell
+   docker compose up --build -d
+   ```
 
-## Getting started
+5. Confirm that all services are healthy:
 
-### 1. Install uv
+   ```powershell
+   docker compose ps
+   ```
 
-**macOS / Linux:**
+The API is available at:
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+- Gateway: `http://localhost:8085`
+- OpenAPI documentation: `http://localhost:8085/docs`
+
+## Environment configuration
+
+The repository includes:
+
+- `.env.example` — safe template containing placeholders such as
+  `get-your-key`
+- `.env` — your local secrets; ignored by Git
+- `.env.docker` — committed Docker networking defaults with no real secrets
+
+At minimum, replace these values in `.env`:
+
+```env
+SECRET_KEY=get-your-key
+INTERNAL_SERVICE_TOKEN=get-your-key
+OPENROUTER_API_KEY=get-your-key
+
+SUPER_ADMIN_EMAIL=get-your-email
+SUPER_ADMIN_PASSWORD=get-your-password
+SUPER_ADMIN_FIRST_NAME=get-your-first-name
+SUPER_ADMIN_LAST_NAME=get-your-last-name
 ```
 
-**Windows (PowerShell):**
+Generate strong random values for `SECRET_KEY` and `INTERNAL_SERVICE_TOKEN`.
+Never use `get-your-key` in a deployed environment.
+
+See [`docs/environment.md`](docs/environment.md) for all supported settings.
+
+## Authentication
+
+User endpoints:
+
+- `POST /auth/register`
+- `POST /auth/login`
+
+Administrator endpoint:
+
+- `POST /admin/login`
+
+The initial super administrator is created at startup only when all four
+`SUPER_ADMIN_*` variables are configured and the database has no existing
+super administrator.
+
+Changing `SUPER_ADMIN_PASSWORD` later does not change the password of an
+existing account. Account data is stored in the Docker volume, not in Git, so
+accounts from another computer do not automatically transfer.
+
+To intentionally remove all local data and seed a fresh administrator:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Alternatively `pip install uv`. Verify with `uv --version`.
-
-### 2. Install dependencies
-
-Creates `.venv/` and installs everything (incl. dev tools) from `uv.lock`,
-provisioning Python 3.13 automatically if needed:
-
-```bash
-uv sync --all-groups        # or: make install
-```
-
-### 3. Configure environment variables
-
-Keep secrets in a git-ignored `.env` (API keys, `SECRET_KEY`, etc.). Docker
-Compose also loads the committed [`.env.docker`](.env.docker) overlay for
-in-network URLs (`postgres`, `auth_service`, …). Do not point container
-`DATABASE_URL` or `*_SERVICE_URL` at `localhost`.
-
-See [`docs/environment.md`](docs/environment.md) for the full catalog.
-
-## Running the services
-
-Run any service locally (hot reload). Use the Makefile or the raw `uv` command:
-
-```bash
-make run-gateway             # cd services/gateway && uv run uvicorn app.main:app --reload --port 8000
-make run-auth                # :8001
-make run-user                # :8002
-make run-admin               # :8003
-make run-ai                  # :8004
-make run-usage               # :8005
-```
-
-Interactive docs for a running service are at `http://localhost:<port>/docs`.
-
-## Running everything with Docker
-
-One command starts PostgreSQL, applies Alembic migrations, and brings up every
-backend service plus the gateway:
-
-```bash
-docker compose up --build
-# detached:
+docker compose down -v
 docker compose up --build -d
 ```
 
-Makefile helpers:
+Warning: `docker compose down -v` permanently deletes the local PostgreSQL
+volume, including all users and application data.
 
-```bash
-make docker-build            # docker compose build
-make docker-up               # docker compose up -d --build
-make docker-logs             # tail logs
-make docker-down             # docker compose down
-make docker-verify           # health checks + print service URLs
+## Useful Docker commands
+
+```powershell
+# Follow all logs
+docker compose logs -f
+
+# Follow authentication logs
+docker compose logs -f auth_service
+
+# Rebuild after pulling changes
+docker compose up --build -d
+
+# Stop the stack without deleting data
+docker compose down
 ```
 
-What you get:
+## Local development
 
-- **Published ports** — Gateway `http://localhost:8000`, PostgreSQL `localhost:5432`
-- **Internal network** — `recentthink-network`; services reach each other by name
-  (e.g. `http://auth_service:8001`), never `localhost`
-- **Startup order** — postgres → migrate → auth → user → usage → ai → admin → gateway
-- **Health waits** — `depends_on` with `condition: service_healthy` /
-  `service_completed_successfully`
-- **Env** — `.env` (secrets) + `.env.docker` (Docker networking defaults)
+Install dependencies:
 
-See [`docs/docker.md`](docs/docker.md) for rebuild, logs, volumes, resource
-limits, and production notes.
-
-## Database & migrations (Alembic)
-
-```bash
-make migrate                 # alembic upgrade head
-make migrate-down            # alembic downgrade -1
-make migrate-history         # alembic history --verbose
-make migrate-revision m="add widgets table"   # autogenerate a revision
-make seed-admin              # create the default administrator
+```powershell
+uv sync --all-groups
 ```
 
-The Alembic environment reads `DATABASE_URL` from `shared.config`. See
-[`docs/database.md`](docs/database.md).
+Run individual services:
 
-## Testing
-
-```bash
-make test                    # uv run pytest (root + service + CRUD tests)
-make coverage                # + HTML report in htmlcov/
-uv run pytest -m "not db"    # skip tests that require a live database
+```powershell
+make run-gateway
+make run-auth
+make run-user
+make run-admin
+make run-ai
+make run-usage
 ```
 
-CRUD tests are marked `db` and require PostgreSQL. Start one first
-(`make db-up`) or run the full stack. See [`docs/testing.md`](docs/testing.md).
+Run checks:
 
-## Code quality
-
-```bash
-make lint                    # uv run ruff check .
-make format                  # uv run isort .  &&  uv run black .
-make format-check            # verify formatting only
-make typecheck               # mypy: shared + tests + each service's app
-make check                   # lint + format-check + typecheck + test
+```powershell
+make lint
+make typecheck
+make test
 ```
 
-Individual tools:
+## Documentation
 
-```bash
-uv run ruff check .
-uv run isort .        # sort imports
-uv run black .        # format
-uv run mypy shared tests
-```
+- [Architecture](docs/architecture.md)
+- [Docker](docs/docker.md)
+- [Environment variables](docs/environment.md)
+- [Database](docs/database.md)
+- [Development](docs/development.md)
+- [Testing](docs/testing.md)
 
-## Environment variables
+## Security
 
-Defined in `.env` (secrets, git-ignored) and `.env.docker` (Docker networking
-defaults). Loaded via Pydantic `BaseSettings` in `shared/config.py`, with
-Compose `environment:` overriding in-network URLs inside containers.
-
-| Variable | Purpose |
-|-------------------------------|--------------------------------------------|
-| `ENVIRONMENT` | `local` / `development` / `staging` / `production` / `test` |
-| `LOG_LEVEL` | Logging level (`INFO`, `DEBUG`, ...) |
-| `DATABASE_URL` | PostgreSQL DSN (`postgresql+psycopg://...`) |
-| `SECRET_KEY` | JWT signing secret; **must** be set outside local/test |
-| `INTERNAL_SERVICE_TOKEN` | Shared secret for service-to-service calls |
-| `AUTH_SERVICE_URL` … `USAGE_SERVICE_URL` | Inter-service base URLs |
-| `OPENROUTER_API_KEY` | OpenRouter API key for AI Service |
-
-Full catalog: [`docs/environment.md`](docs/environment.md). `.env` is
-git-ignored; never commit real secrets. The application **fails fast** if
-`SECRET_KEY` or `INTERNAL_SERVICE_TOKEN` stay at insecure defaults outside
-local/test.
+- Never commit `.env`, API keys, passwords, or tokens.
+- Use unique, randomly generated secrets outside local development.
+- Expose only the gateway publicly.
+- Rotate any credential that has been shared or committed.
