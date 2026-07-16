@@ -273,9 +273,24 @@ class UserManagementService:
         reason: str | None = None,
     ) -> None:
         await self._auth.delete_user(user_id, actor_id=actor_id, reason=reason)
+        # Belt-and-suspenders: auth already publishes AccountDeleted → purge;
+        # re-call in case auth ran before AI/Usage were reachable.
+        await self._best_effort_purge(user_id)
         self._audit.log(
             admin_id=actor_id,
             action=AuditAction.USER_DELETED.value,
             target_user_id=user_id,
             reason=reason,
         )
+
+    async def _best_effort_purge(self, user_id: UUID) -> None:
+        for name, client in (("ai", self._ai), ("usage", self._usage)):
+            try:
+                await client.purge_user(user_id)
+            except Exception as exc:
+                logger.warning(
+                    "Post-delete purge failed service=%s user_id=%s error=%s",
+                    name,
+                    user_id,
+                    exc,
+                )

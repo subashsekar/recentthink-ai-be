@@ -115,3 +115,26 @@ def test_get_session_detail_includes_memory(user: AuthenticatedUser) -> None:
     assert result.memory is not None
     assert result.memory.summary == "Discussed two sum"
     assert result.memory.memory_version == 1
+
+
+def test_rename_archive_pin_session(user: AuthenticatedUser) -> None:
+    session_repo = MagicMock()
+    message_repo = MagicMock()
+    session = _session(user.user_id)
+    session_repo.get_by_id.return_value = session
+    session_repo.update_session.return_value = session
+
+    manager = HistoryManager(session_repo=session_repo, message_repo=message_repo)
+    renamed = manager.rename_session(user, session.id, title="Renamed")
+    assert renamed.id == session.id
+    session_repo.update_session.assert_called_with(session.id, title="Renamed")
+
+    session_repo.update_session.reset_mock()
+    archived = manager.archive_session(user, session.id, archived=True)
+    assert archived.id == session.id
+    session_repo.update_session.assert_called_with(session.id, is_archived=True)
+
+    session_repo.update_session.reset_mock()
+    pinned = manager.pin_session(user, session.id, pinned=True)
+    assert pinned.id == session.id
+    session_repo.update_session.assert_called_with(session.id, is_pinned=True)

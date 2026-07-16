@@ -101,6 +101,41 @@ is persisted. Learning statistics are **read** from AI-owned progress tables
 
 Migration: `n5i0d1e2f3g4_add_user_profiles`.
 
+## Usage metering (`usage_service`)
+
+| Table | Purpose | Key columns |
+|----------------|----------------------------------|-----------------------------------------------|
+| `usage_records` | Per-request token/cost metering | `user_id`, `service_name`, `feature`, `request_count`, `token_usage`, `prompt_tokens`, `completion_tokens`, `model`, `provider`, `estimated_cost`, `success`, `session_id`, `section_tokens` (JSONB), `created_at` |
+
+No FK to `users` — account delete purges rows via
+`DELETE /internal/admin/users/{user_id}`. Migrations include
+`e7f2a3b4c5d6_add_usage_records_table`, analytics enrichments, and
+`section_tokens`.
+
+## Admin domain (`admin_service`)
+
+| Table | Purpose | Key columns |
+|---------------------|----------------------------------|-----------------------------------------------|
+| `admin_audit_logs` | Append-only admin actions | `admin_id`, `action`, `target_user_id`, `reason`, `metadata`, `created_at` |
+| `notifications` | In-app user notifications | `user_id`, `title`, `message`, `type`, `is_read`, `created_at` |
+| `feature_flags` | Admin-managed toggles | `key` (unique), `name`, `description`, `enabled`, timestamps |
+
+Migration: `q8l3g4h5i6j7_add_user_blocked_admin_tables` (audit + notifications),
+`u2b3c4d5e6f7_add_feature_flags`.
+
+## AI sessions chat fields
+
+`ai_sessions` supports ChatGPT-style session management:
+
+| Column | Purpose |
+|----------------|----------------------------------|
+| `is_archived` | Hide from default session lists |
+| `is_pinned` | Sort pinned sessions first |
+| `last_active_at` | Updated on chat actions |
+
+Migration: `t1a2b3c4d5e6_add_ai_session_chat_fields`. Related message metadata for
+stream/retry/regenerate lives in `ai_messages.content_metadata` (JSONB).
+
 ## Schemas: DB layer vs. API layer
 
 Schemas are split so credential material is never serialized to clients:

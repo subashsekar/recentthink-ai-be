@@ -105,9 +105,43 @@ For DSA Pattern Coach, planner selects only `TEACHER`. Learning/recognition/visu
 | GET | `/ai/history` | JWT | List session history |
 | GET | `/ai/models` | JWT | List configured LLM models |
 
-### LeetCode (`/leetcode/*`) / HackerRank (`/hackerrank/*`) / Courses (`/courses/*`)
+### Conversational Chat (`/chat/{feature}/*`) — Sprint C
 
-See product routers for analyze/generate, follow-up, history, progress, examples, export.
+Unified ChatGPT-style API for all products. See [docs/conversation-chat.md](../../docs/conversation-chat.md) for SSE contracts and flows.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/chat/{feature}/stream` | JWT | SSE stream (status + tokens + complete JSON) |
+| POST | `/chat/{feature}/continue` | JWT | Continue truncated response |
+| POST | `/chat/{feature}/retry` | JWT | Retry assistant turn |
+| POST | `/chat/{feature}/regenerate` | JWT | Regenerate assistant turn |
+| POST | `/chat/{feature}/follow-up` | JWT | Follow-up alias |
+| GET | `/chat/{feature}/sessions` | JWT | List sessions (search, archive filter) |
+| GET | `/chat/{feature}/sessions/{session_id}` | JWT | Session detail |
+| PATCH | `/chat/{feature}/sessions/{session_id}/rename` | JWT | Rename session |
+| PATCH | `/chat/{feature}/sessions/{session_id}/archive` | JWT | Archive / restore |
+| PATCH | `/chat/{feature}/sessions/{session_id}/pin` | JWT | Pin / unpin |
+| DELETE | `/chat/{feature}/sessions/{session_id}` | JWT | Delete session |
+| POST | `/chat/{feature}/export` | JWT | Export conversation / solution / course / pattern |
+
+`{feature}`: `leetcode`, `hackerrank`, `dsa_pattern`, `course_generator`.  
+`interview` is path-visible but returns **HTTP 501** (scaffold only).
+
+### Streaming contract
+
+- **Token SSE:** `POST /chat/{feature}/stream` (status + tokens + complete + done; cancel + reconnect).
+- **Product SSE:** analyze/generate with `?stream=true` — coarse status/complete events only.
+
+### Version history
+
+| Product | Endpoint |
+|---------|----------|
+| LeetCode | `GET /leetcode/sessions/{session_id}/versions` |
+| HackerRank | `GET /hackerrank/sessions/{session_id}/versions` |
+| DSA Pattern | `GET /dsa-pattern/sessions/{session_id}/versions` |
+| Course Generator | `GET /courses/sessions/{session_id}/versions` |
+
+Versions are assistant-message regenerate chains (`content_metadata`), not a separate DB table.
 
 ### DSA Pattern Coach (`/dsa-pattern/*`)
 
@@ -122,6 +156,7 @@ See product routers for analyze/generate, follow-up, history, progress, examples
 | POST | `/dsa-pattern/progress` | JWT | Update practice/quiz/mastery |
 | GET | `/dsa-pattern/dashboard` | JWT | Progress + recent/active sessions |
 | GET | `/dsa-pattern/examples` | JWT | Example pattern cards |
+| GET | `/dsa-pattern/sessions/{session_id}/versions` | JWT | Assistant regenerate version history |
 | POST | `/dsa-pattern/export/markdown` | JWT | Export as Markdown |
 | POST | `/dsa-pattern/export/json` | JWT | Export as JSON |
 | POST | `/dsa-pattern/export/pdf` | JWT | Export as PDF |

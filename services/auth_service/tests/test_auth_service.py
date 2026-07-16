@@ -17,7 +17,6 @@ from app.services.password_service import PasswordService
 from shared.config import Settings
 from shared.exceptions import DuplicateEmailError
 from shared.exceptions.auth import (
-    EmailNotVerifiedError,
     ExpiredTokenError,
     ForbiddenError,
     InactiveUserError,
@@ -100,6 +99,7 @@ def _make_user(
     user.role = Role.USER
     user.is_verified = is_verified
     user.is_active = is_active
+    user.is_blocked = False
     user.created_at = datetime.now(tz=UTC)
     user.updated_at = datetime.now(tz=UTC)
     user.password_changed_at = datetime.now(tz=UTC)
@@ -235,22 +235,22 @@ def test_login_success(
     assert len(stored_hash) == 64
 
 
-def test_login_blocked_when_email_unverified(
+def test_login_succeeds_when_email_unverified(
     auth_service: AuthService,
     user_repository: MagicMock,
     refresh_token_repository: MagicMock,
     password_service: PasswordService,
 ) -> None:
+    """Login issues tokens for unverified users; gated routes enforce verification."""
     user = _make_user(password_service=password_service, is_verified=False)
     user_repository.get_user_by_email.return_value = user
 
-    with pytest.raises(EmailNotVerifiedError):
-        auth_service.login(
-            LoginRequest(email="user@example.com", password="SecurePass1!"),
-        )
+    response = auth_service.login(
+        LoginRequest(email="user@example.com", password="SecurePass1!"),
+    )
 
-    # No session should be issued for an unverified account.
-    refresh_token_repository.create_refresh_token.assert_not_called()
+    assert response.user.is_verified is False
+    refresh_token_repository.create_refresh_token.assert_called_once()
 
 
 def test_login_succeeds_after_verification(

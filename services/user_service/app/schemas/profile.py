@@ -255,3 +255,32 @@ class AvatarUploadResponse(BaseModel):
     """Result of an avatar upload."""
 
     profile_picture_url: str
+
+
+class ProfileCompletionResponse(BaseModel):
+    """Computed profile completion for onboarding nudges."""
+
+    percent: int = Field(ge=0, le=100)
+    completed_fields: list[str]
+    missing_fields: list[str]
+    is_complete: bool
+
+
+class PublicProfileListItem(BaseModel):
+    """Lightweight public profile row for search results."""
+
+    username: str
+    first_name: str | None = None
+    last_name: str | None = None
+    primary_skill: PrimarySkill | None = None
+    profile_picture_url: str | None = None
+    bio: str | None = None
+
+
+class PublicProfileSearchResponse(BaseModel):
+    """Paginated public profile search results."""
+
+    items: list[PublicProfileListItem]
+    page: int
+    page_size: int
+    total: int

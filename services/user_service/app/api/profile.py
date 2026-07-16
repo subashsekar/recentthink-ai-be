@@ -12,11 +12,14 @@ from app.dependencies.repositories import (
     get_public_profile_service,
     get_statistics_service,
 )
+from app.models.enums import PrimarySkill
 from app.schemas.profile import (
     AvatarUploadResponse,
+    ProfileCompletionResponse,
     ProfileResponse,
     ProfileUpdate,
     PublicProfileResponse,
+    PublicProfileSearchResponse,
     StatisticsResponse,
 )
 from app.services.avatar_service import AvatarService
@@ -93,6 +96,41 @@ def get_statistics(
         actor_id=current_user.user_id,
         actor_role=current_user.role,
         target_user_id=target,
+    )
+
+
+@router.get("/completion", response_model=ProfileCompletionResponse)
+def get_profile_completion(
+    current_user: Annotated[AuthenticatedUser, Depends(require_authenticated_user)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    user_id: UUID | None = Query(
+        default=None,
+        description="Admin-only: fetch another user's profile completion.",
+    ),
+) -> ProfileCompletionResponse:
+    """Return computed profile completion for the current user (or admin target)."""
+    target = _resolve_target_user_id(current_user, user_id)
+    return service.get_profile_completion(
+        actor_id=current_user.user_id,
+        actor_role=current_user.role,
+        target_user_id=target,
+    )
+
+
+@router.get("/search", response_model=PublicProfileSearchResponse)
+def search_public_profiles(
+    service: Annotated[PublicProfileService, Depends(get_public_profile_service)],
+    q: str | None = Query(default=None, description="Search by name or username."),
+    primary_skill: PrimarySkill | None = Query(default=None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> PublicProfileSearchResponse:
+    """Search public profiles (username required on each result). No auth required."""
+    return service.search(
+        q=q,
+        primary_skill=primary_skill,
+        page=page,
+        page_size=page_size,
     )
 
 

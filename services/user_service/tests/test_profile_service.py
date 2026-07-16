@@ -260,3 +260,145 @@ def test_profile_create_schema_normalizes() -> None:
     assert payload.username == "jane_dev"
     assert payload.github_username == "octo"
     assert payload.bio == "hello"
+
+
+def test_profile_completion_empty_profile() -> None:
+    from app.models.profile import UserProfile
+    from app.services.profile_completion import compute_profile_completion
+
+    profile = UserProfile(user_id=uuid4())
+    result = compute_profile_completion(profile)
+    assert result.percent == 0
+    assert result.is_complete is False
+    assert "username" in result.missing_fields
+    assert "first_name" in result.missing_fields
+
+
+def test_profile_completion_full_required() -> None:
+    from app.models.enums import CurrentStatus, PrimarySkill
+    from app.models.profile import UserProfile
+    from app.services.profile_completion import compute_profile_completion
+
+    profile = UserProfile(
+        user_id=uuid4(),
+        username="jane",
+        first_name="Jane",
+        last_name="Doe",
+        bio="Builder",
+        current_status=CurrentStatus.STUDENT,
+        primary_skill=PrimarySkill.PYTHON,
+        profile_picture_url="http://localhost/media/a.jpg",
+    )
+    result = compute_profile_completion(profile)
+    assert result.is_complete is True
+    assert result.percent == round(7 / 12 * 100)
+    assert "username" in result.completed_fields
+    assert "college_or_company" in result.missing_fields
+
+
+def test_profile_completion_all_fields() -> None:
+    from app.models.enums import CurrentStatus, PrimarySkill
+    from app.models.profile import UserProfile
+    from app.services.profile_completion import compute_profile_completion
+
+    profile = UserProfile(
+        user_id=uuid4(),
+        username="jane",
+        first_name="Jane",
+        last_name="Doe",
+        bio="Builder",
+        current_status=CurrentStatus.STUDENT,
+        primary_skill=PrimarySkill.PYTHON,
+        profile_picture_url="http://localhost/media/a.jpg",
+        mobile_number="+15551234567",
+        college="MIT",
+        github_username="jane",
+        linkedin_url="https://linkedin.com/in/jane",
+        leetcode_username="jane",
+    )
+    result = compute_profile_completion(profile)
+    assert result.percent == 100
+    assert result.is_complete is True
+    assert result.missing_fields == []
+
+
+def test_profile_completion_or_groups() -> None:
+    from app.models.enums import CurrentStatus, PrimarySkill
+    from app.models.profile import UserProfile
+    from app.services.profile_completion import compute_profile_completion
+
+    profile = UserProfile(
+        user_id=uuid4(),
+        username="jane",
+        first_name="Jane",
+        last_name="Doe",
+        bio="Builder",
+        current_status=CurrentStatus.WORKING_PROFESSIONAL,
+        primary_skill=PrimarySkill.PYTHON,
+        profile_picture_url="http://localhost/media/a.jpg",
+        company="Acme",
+        portfolio_url="https://jane.dev",
+        hackerrank_username="jane",
+    )
+    result = compute_profile_completion(profile)
+    assert "college_or_company" in result.completed_fields
+    assert "linkedin_or_portfolio" in result.completed_fields
+    assert "leetcode_or_hackerrank" in result.completed_fields
+
+
+def test_profile_service_get_completion() -> None:
+    from app.models.enums import CurrentStatus, PrimarySkill
+    from app.models.profile import UserProfile
+    from app.services.profile_service import ProfileService
+
+    user_id = uuid4()
+    profile = UserProfile(
+        user_id=user_id,
+        username="jane",
+        first_name="Jane",
+        last_name="Doe",
+        bio="Hi",
+        current_status=CurrentStatus.STUDENT,
+        primary_skill=PrimarySkill.PYTHON,
+        profile_picture_url="http://x/a.jpg",
+    )
+    service = ProfileService(MagicMock())
+    with patch.object(service._profiles, "require_by_user_id", return_value=profile):
+        result = service.get_profile_completion(
+            actor_id=user_id,
+            actor_role="USER",
+            target_user_id=user_id,
+        )
+    assert result.is_complete is True
+
+
+def test_public_profile_search() -> None:
+    from app.models.enums import PrimarySkill
+    from app.models.profile import UserProfile
+    from app.services.public_profile_service import PublicProfileService
+
+    profiles = [
+        UserProfile(
+            user_id=uuid4(),
+            username="jane",
+            first_name="Jane",
+            last_name="Doe",
+            bio="x" * 250,
+            primary_skill=PrimarySkill.PYTHON,
+        )
+    ]
+    service = PublicProfileService(MagicMock())
+    with patch.object(service._profiles, "list_profiles", return_value=(profiles, 1)) as listed:
+        response = service.search(q="jane", page=1, page_size=20)
+    listed.assert_called_once_with(
+        skip=0,
+        limit=20,
+        primary_skill=None,
+        name="jane",
+        public_only=True,
+    )
+    assert response.total == 1
+    assert response.items[0].username == "jane"
+    assert response.items[0].bio is not None
+    assert len(response.items[0].bio) <= 200
+    assert "statistics" not in response.items[0].model_dump()

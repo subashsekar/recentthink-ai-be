@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -291,6 +292,19 @@ class ServiceHealthItem(BaseModel):
 class HealthResponse(BaseModel):
     services: list[ServiceHealthItem]
     overall: str
+    cache: dict[str, Any] | None = None
+
+
+class CacheStatsResponse(BaseModel):
+    """AI Service in-memory cache statistics (hit/miss/TTL/entries)."""
+
+    enabled: bool = False
+    entry_count: int = 0
+    hits: int = 0
+    misses: int = 0
+    hit_rate: float = 0.0
+    evictions: int = 0
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class NotificationItem(BaseModel):
@@ -326,3 +340,35 @@ class BroadcastNotificationRequest(BaseModel):
 class BroadcastNotificationResponse(BaseModel):
     message: str
     created: int
+
+
+class FeatureFlagResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    key: str
+    name: str
+    description: str | None = None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class FeatureFlagCreate(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    enabled: bool = False
+
+
+class FeatureFlagUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    enabled: bool | None = None
+
+
+class FeatureFlagListResponse(BaseModel):
+    items: list[FeatureFlagResponse]
+    total: int
+    page: int
+    page_size: int

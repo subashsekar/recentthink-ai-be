@@ -28,6 +28,7 @@ def _make_user(*, role: Role = Role.USER, is_active: bool = True) -> MagicMock:
     user.role = role
     user.is_verified = True
     user.is_active = is_active
+    user.is_blocked = False
     user.created_at = datetime.now(tz=UTC)
     return user
 

@@ -1,15 +1,16 @@
 # RecentThink
 
-A production-ready SaaS AI application built on a **microservice** +
-**clean architecture** foundation. Phase 1 delivers the platform skeleton:
-six independently runnable FastAPI services, a shared library, PostgreSQL +
-SQLAlchemy 2.x + Alembic, Dockerised local infrastructure, and a full quality
-pipeline. It is structured to grow into authentication, AI agents, and RAG
-workloads in later phases.
+Portfolio **microservice AI platform** for interview and coding practice
+mentorship. Six FastAPI services sit behind an API Gateway, with shared
+configuration, PostgreSQL persistence, JWT auth, admin tooling, usage metering,
+and streaming chat over SSE.
 
-> Phase 1 intentionally excludes authentication (JWT), RBAC, AI features, and
-> business APIs. Only health endpoints and the User/Admin persistence layer
-> exist so far.
+**Products (AI Service):** LeetCode Mentor, HackerRank Mentor, DSA Pattern Coach,
+Course Generator. Chat/SSE streaming is available under `/chat/{feature}/*`.
+AI Service completion: **~95%** — see
+[docs/AI_SERVICE_COMPLETION_REPORT.md](docs/AI_SERVICE_COMPLETION_REPORT.md).
+Interview Trainer is intentionally **not** implemented (out of scope for this
+portfolio).
 
 ## Technology stack
 
@@ -19,12 +20,15 @@ workloads in later phases.
 | Web framework | FastAPI + Uvicorn |
 | ORM / migrations | SQLAlchemy 2.x + Alembic |
 | Database | PostgreSQL 16 (via `psycopg` 3) |
-| Configuration | Pydantic Settings |
+| Configuration | Pydantic Settings (`shared/config.py`) |
 | Packaging / environments | uv |
+| AI orchestration | LangGraph + OpenRouter |
+| Auth | JWT (HS256), refresh rotation, bcrypt |
+| Inter-service auth | `X-Internal-Service-Token` |
 | Testing | Pytest, pytest-asyncio, pytest-cov |
 | Quality | Ruff, Black, isort, mypy (strict) |
 | Containers | Docker + Docker Compose |
-| Passwords | bcrypt |
+| Monitoring | Sentry (optional) |
 
 ## Folder structure
 
@@ -32,11 +36,11 @@ workloads in later phases.
 recentthink/
 ├── services/                 # One folder per microservice (each may include Dockerfile)
 │   ├── gateway/              # API gateway               (:8000)
-│   ├── auth_service/         # Auth + User/Admin models  (:8001)
-│   ├── user_service/         # End-user domain           (:8002)
-│   ├── admin_service/        # Admin domain              (:8003)
-│   ├── ai_service/           # AI / RAG                    (:8004)
-│   ├── usage_service/        # Usage & billing             (:8005)
+│   ├── auth_service/         # Auth + identity           (:8001)
+│   ├── user_service/         # Profiles / avatars        (:8002)
+│   ├── admin_service/        # Admin aggregation         (:8003)
+│   ├── ai_service/           # AI products + chat/SSE    (:8004)
+│   ├── usage_service/        # Usage metering            (:8005)
 │   └── conftest.py           # Cross-service test isolation
 │   # each service: app/{api,core,services,repositories,models,
 │   #                     schemas,dependencies,middleware,utils}, tests/
@@ -45,8 +49,8 @@ recentthink/
 │   ├── database/             # Engine, SessionLocal, Base, get_db
 │   ├── models/               # TimestampedModel + mixins
 │   ├── schemas/              # Shared Pydantic schemas (health, ...)
-│   ├── security/             # Password hashing
-│   ├── exceptions/           # Repository exception types
+│   ├── security/             # Passwords, JWT, service token
+│   ├── exceptions/           # Domain exception types
 │   ├── logging/              # Logger factory
 │   ├── constants/ utils/ common/
 │   └── py.typed              # PEP 561 marker (shared ships type hints)
@@ -66,8 +70,10 @@ recentthink/
 ```
 
 More detail lives in [`docs/`](docs/): [architecture](docs/architecture.md),
-[database](docs/database.md), [docker](docs/docker.md),
-[development](docs/development.md), [testing](docs/testing.md).
+[database](docs/database.md), [environment](docs/environment.md),
+[docker](docs/docker.md), [development](docs/development.md),
+[testing](docs/testing.md), [conversation chat](docs/conversation-chat.md),
+[backend completion](docs/BACKEND_COMPLETION_REPORT.md).
 
 ## Microservice architecture
 
@@ -133,6 +139,9 @@ Keep secrets in a git-ignored `.env` (API keys, `SECRET_KEY`, etc.). Docker
 Compose also loads the committed [`.env.docker`](.env.docker) overlay for
 in-network URLs (`postgres`, `auth_service`, …). Do not point container
 `DATABASE_URL` or `*_SERVICE_URL` at `localhost`.
+
+See [`docs/environment.md`](docs/environment.md) for the full catalog.
+
 ## Running the services
 
 Run any service locally (hot reload). Use the Makefile or the raw `uv` command:
@@ -235,30 +244,13 @@ Compose `environment:` overriding in-network URLs inside containers.
 |-------------------------------|--------------------------------------------|
 | `ENVIRONMENT` | `local` / `development` / `staging` / `production` / `test` |
 | `LOG_LEVEL` | Logging level (`INFO`, `DEBUG`, ...) |
-| `LOG_FORMAT` | `json` (containers) or `text` |
 | `DATABASE_URL` | PostgreSQL DSN (`postgresql+psycopg://...`) |
-| `SECRET_KEY` | App secret; **must** be set outside local/test |
-| `JWT_ALGORITHM` | JWT signing algorithm |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime |
-| `AUTH_SERVICE_URL` | Auth base URL (Docker: `http://auth_service:8001`) |
-| `USER_SERVICE_URL` | User base URL (Docker: `http://user_service:8002`) |
-| `ADMIN_SERVICE_URL` | Admin base URL (Docker: `http://admin_service:8003`) |
-| `AI_SERVICE_URL` | AI base URL (Docker: `http://ai_service:8004`) |
-| `USAGE_SERVICE_URL` | Usage base URL (Docker: `http://usage_service:8005`) |
+| `SECRET_KEY` | JWT signing secret; **must** be set outside local/test |
 | `INTERNAL_SERVICE_TOKEN` | Shared secret for service-to-service calls |
+| `AUTH_SERVICE_URL` … `USAGE_SERVICE_URL` | Inter-service base URLs |
 | `OPENROUTER_API_KEY` | OpenRouter API key for AI Service |
-| `OPENAI_API_KEY` | Reserved / optional |
-| `GOOGLE_API_KEY` | Reserved / optional |
 
-`.env` is git-ignored; never commit real secrets. The application **fails
-fast** if `SECRET_KEY` is left at the insecure default in any non-local
-environment.
-
-## Phase 1 scope
-
-Delivered: project structure, six services with health endpoints, shared
-library, PostgreSQL + SQLAlchemy 2.x, Alembic migrations, User/Admin models &
-repositories, Docker stack, tests, and CI.
-
-Deferred to later phases: authentication (JWT), RBAC, AI agents/RAG, and
-business APIs.
+Full catalog: [`docs/environment.md`](docs/environment.md). `.env` is
+git-ignored; never commit real secrets. The application **fails fast** if
+`SECRET_KEY` or `INTERNAL_SERVICE_TOKEN` stay at insecure defaults outside
+local/test.

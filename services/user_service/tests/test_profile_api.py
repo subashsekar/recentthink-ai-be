@@ -318,3 +318,46 @@ def test_health_still_works(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
+
+
+def test_get_profile_completion(client: TestClient, mock_profile_service: MagicMock) -> None:
+    from app.schemas.profile import ProfileCompletionResponse
+
+    mock_profile_service.get_profile_completion.return_value = ProfileCompletionResponse(
+        percent=58,
+        completed_fields=["username", "first_name"],
+        missing_fields=["bio"],
+        is_complete=False,
+    )
+    response = client.get("/profile/completion", headers={"Authorization": "Bearer fake"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["percent"] == 58
+    assert body["is_complete"] is False
+
+
+def test_search_public_profiles(client: TestClient, mock_public_service: MagicMock) -> None:
+    from app.models.enums import PrimarySkill
+    from app.schemas.profile import PublicProfileListItem, PublicProfileSearchResponse
+
+    mock_public_service.search.return_value = PublicProfileSearchResponse(
+        items=[
+            PublicProfileListItem(
+                username="jane",
+                first_name="Jane",
+                last_name="Doe",
+                primary_skill=PrimarySkill.PYTHON,
+                profile_picture_url=None,
+                bio="Hi",
+            )
+        ],
+        page=1,
+        page_size=20,
+        total=1,
+    )
+    response = client.get("/profile/search?q=jane&page=1&page_size=20")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["username"] == "jane"
+    assert "statistics" not in body["items"][0]

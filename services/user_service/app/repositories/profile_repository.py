@@ -161,12 +161,16 @@ class ProfileRepository:
         primary_skill: PrimarySkill | None = None,
         current_status: CurrentStatus | None = None,
         name: str | None = None,
+        public_only: bool = False,
     ) -> tuple[list[UserProfile], int]:
         """Return filtered profiles with total count."""
         from sqlalchemy import func, or_
 
         try:
             filters = []
+            if public_only:
+                filters.append(UserProfile.username.is_not(None))
+                filters.append(UserProfile.username != "")
             if primary_skill is not None:
                 filters.append(UserProfile.primary_skill == primary_skill)
             if current_status is not None:

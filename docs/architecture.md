@@ -1,8 +1,8 @@
 # Architecture
 
-RecentThink is a **microservice** platform organised around **clean
-architecture** principles. This document explains the high-level design, the
-role of the shared package, and each service's responsibility.
+RecentThink is a **microservice** portfolio AI platform organised around
+**clean architecture**. This document summarises service roles and delivery
+status — not a Phase 1 skeleton.
 
 ## Principles
 
@@ -14,6 +14,9 @@ role of the shared package, and each service's responsibility.
   service functions) rather than concrete database calls.
 - **Independent deployability** — each service is its own FastAPI app with its
   own port and can be built/run/scaled on its own.
+- **No shared DB writes across services** — Admin aggregates via
+  `X-Internal-Service-Token` HTTP (`/internal/admin/*`); Auth owns identity,
+  AI owns sessions/progress, Usage owns metering.
 
 ## Layout of a service
 
@@ -35,8 +38,7 @@ tests/              # Service-scoped tests
 ```
 
 A request flows **api → services → repositories → models/DB**, and results
-flow back out as **schemas**. This keeps the framework (FastAPI) at the edges
-and the domain logic independent and testable.
+flow back out as **schemas**.
 
 ## The shared package
 
@@ -45,28 +47,39 @@ every service:
 
 | Module | Responsibility |
 |----------------------|-----------------------------------------------------|
-| `config.py` | `Settings` (Pydantic `BaseSettings`), environment/enum types, cached `get_settings()`, and the `SECRET_KEY` safety guard. |
-| `database/` | SQLAlchemy `engine`, `SessionLocal`, declarative `Base` (with metadata naming conventions), `get_db()` dependency, and URL normalisation. |
-| `models/` | `TimestampedModel` abstract base + `TimestampMixin` (`created_at`/`updated_at`). |
+| `config.py` | `Settings` (Pydantic `BaseSettings`), env enums, cached `get_settings()`, secret/token guards. |
+| `database/` | SQLAlchemy `engine`, `SessionLocal`, `Base`, `get_db()`. |
+| `models/` | `TimestampedModel` / `CreatedAtModel` mixins. |
 | `schemas/` | Shared Pydantic schemas such as `HealthResponse`. |
-| `security/` | Password hashing (`hash_password`, `verify_password`). |
-| `exceptions/` | Repository exception hierarchy (`RepositoryError`, `DuplicateEmailError`, `RecordNotFoundError`). |
+| `security/` | Passwords, JWT helpers, internal service token. |
+| `exceptions/` | Domain exception hierarchy. |
 | `logging/` | `get_logger()` factory honouring `LOG_LEVEL`. |
-| `constants/`, `utils/`, `common/` | Reserved namespaces for future shared code. |
-
-Because services import from `shared`, there is exactly one place that knows
-how to read configuration or open a database session.
 
 ## Service responsibilities
 
-| Service | Port | Phase 1 responsibility | Future |
-|-----------------|------|--------------------------------------------|--------------------------|
-| `gateway` | 8000 | Entry point / health. | Request routing, edge concerns. |
-| `auth_service` | 8001 | Owns User & Admin models, repositories, migrations; DB health check. | Authentication, JWT issuance. |
-| `user_service` | 8002 | User profile, avatar, public profile, learning statistics view. | Preferences / notifications. |
-| `admin_service` | 8003 | Admin dashboard, user management orchestration, audit logs, notifications (HTTP aggregation only). | Feature flags / reports export. |
-| `ai_service` | 8004 | AI agents, RAG pipelines, OpenRouter orchestration + free in-memory cache. | Streaming / more products. |
-| `usage_service` | 8005 | Usage metering & billing. | Quotas / invoices. |
+| Service | Port | Status | Responsibility |
+|-----------------|------|--------|----------------|
+| `gateway` | 8000 | **Done** | Public reverse proxy; JWT forward; SSE passthrough for `/chat/*`. |
+| `auth_service` | 8001 | **Done** | Register/login, JWT + refresh, email verify/reset, account disable/delete, admin identity mutations, internal admin APIs. |
+| `user_service` | 8002 | **Done** | Profiles, avatars (local/Supabase), public profile/search, profile completion, learning-stats reads. |
+| `admin_service` | 8003 | **Done** | Dashboard, user management, usage/AI analytics aggregation, audit logs, notifications, feature flags, system health. |
+| `ai_service` | 8004 | **Done (~95%)** | LeetCode / HackerRank / Course Generator / DSA Pattern Coach; shared LangGraph + one OpenRouter call; chat SSE; cache; usage; internal purge. See [AI_SERVICE_COMPLETION_REPORT.md](AI_SERVICE_COMPLETION_REPORT.md). |
+| `usage_service` | 8005 | **Done** | Usage metering (`usage_records`), admin analytics APIs, internal purge. |
+
+### Product / feature status
+
+| Feature | Status |
+|---------|--------|
+| LeetCode Mentor | **Done** |
+| HackerRank Mentor | **Done** |
+| DSA Pattern Coach | **Done** |
+| Course Generator | **Done** |
+| Chat / SSE streaming (`/chat/{feature}/*`) | **Done** |
+| Feature flags (Admin) | **Done** |
+| Account delete → AI/Usage orphan cleanup | **Done** |
+| Interview Trainer | **Out of Scope** (not implemented) |
+| Quotas / billing invoices | Deferred |
+| K8s / Terraform / Helm / Prometheus / Grafana / OTel | Deferred (placeholders only) |
 
 ## Health endpoints
 
@@ -86,6 +99,7 @@ GET /health/db  ->  200  {"message": "Database Connected Successfully"}
 ## Configuration & environments
 
 `Settings` supports `local`, `development`, `staging`, `production`, and
-`test`. Local/test tolerate the insecure default `SECRET_KEY` (with a warning);
-any other environment **fails fast** if the secret is not overridden. See
-[development.md](development.md) for the full workflow.
+`test`. Local/test tolerate insecure default `SECRET_KEY` /
+`INTERNAL_SERVICE_TOKEN` (with a warning); any other environment **fails
+fast** if those are not overridden. See [environment.md](environment.md) and
+[development.md](development.md).

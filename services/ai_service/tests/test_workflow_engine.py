@@ -82,11 +82,12 @@ async def test_workflow_engine_full_pipeline() -> None:
 
     assert response.session_id == session_id
     assert response.status == SessionStatus.COMPLETED
-    assert len(response.modules) == 3
+    assert len(response.modules) == 4
     assert response.modules[0].module == ModuleName.TEACHER
     assert response.modules[1].module == ModuleName.CODER
     assert "```python" in response.modules[1].content
-    assert "Common Mistakes" in response.modules[2].content
+    assert response.modules[2].module == ModuleName.CODE_EXPLAINER
+    assert "Common Mistakes" in response.modules[3].content
     llm_client.chat_completion.assert_awaited()
 
 

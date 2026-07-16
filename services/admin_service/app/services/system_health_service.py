@@ -78,7 +78,18 @@ class SystemHealthService:
             overall = "warning"
         else:
             overall = "healthy"
-        return HealthResponse(services=services, overall=overall)
+
+        cache: dict | None = None
+        try:
+            cache = await self._ai.cache_health()
+        except Exception:
+            cache = {"status": "unavailable"}
+
+        return HealthResponse(services=services, overall=overall, cache=cache)
+
+    async def get_cache_stats(self) -> dict:
+        """Return AI Service memory-cache hit/miss/TTL statistics."""
+        return await self._ai.cache_health()
 
     async def _probe_url(self, name: str, url: str) -> tuple[str, float]:
         start = time.perf_counter()

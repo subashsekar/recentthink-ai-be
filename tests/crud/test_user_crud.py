@@ -111,7 +111,7 @@ def test_user_list(
     """READ: list users includes the newly created record."""
     created = user_repository.create_user(**user_payload)
 
-    users = user_repository.list_users()
+    users, _total = user_repository.list_users()
     user_ids = {user.id for user in users}
 
     assert created.id in user_ids

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from app.agents.shared.workflow.graph import AIWorkflowEngine
@@ -62,3 +63,17 @@ class AIPlatformOrchestrator:
         request: ChatRequest,
     ) -> ChatResponse:
         return await self._engine.execute(user_id=user_id, request=request)
+
+    async def execute_stream(
+        self,
+        *,
+        user_id: UUID,
+        request: ChatRequest,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    ):
+        async for event in self._engine.execute_stream(
+            user_id=user_id,
+            request=request,
+            cancel_check=cancel_check,
+        ):
+            yield event

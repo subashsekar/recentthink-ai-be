@@ -26,7 +26,11 @@ def test_get_settings_is_cached() -> None:
 
 def test_is_production_flag() -> None:
     """``is_production`` should only be true for the production environment."""
-    prod = Settings(environment=Environment.PRODUCTION)
+    prod = Settings(
+        environment=Environment.PRODUCTION,
+        secret_key="x" * 32,
+        internal_service_token="secure-production-internal-token",
+    )
     local = Settings(environment=Environment.LOCAL)
 
     assert prod.is_production is True

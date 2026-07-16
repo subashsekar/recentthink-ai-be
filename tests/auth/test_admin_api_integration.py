@@ -26,12 +26,27 @@ def admin_api_client(
     db_session: object,
     admin_seed_settings: Settings,
 ) -> Iterator[TestClient]:
-    """Test client with DB session and a seeded super-admin account."""
+    """Test client with DB session and a test-scoped super-admin account."""
     from app.database import get_db
     from app.main import app
-    from app.services.super_admin_seed_service import seed_super_admin
+    from app.models.enums import Role
+    from app.repositories.user_repository import UserRepository
+    from app.services.password_service import PasswordService
 
-    seed_super_admin(db_session, settings=admin_seed_settings)  # type: ignore[arg-type]
+    users = UserRepository(db_session)  # type: ignore[arg-type]
+    passwords = PasswordService()
+    email = admin_seed_settings.super_admin_email
+    assert email is not None
+    if users.get_user_by_email(email) is None:
+        users.create_user(
+            first_name=admin_seed_settings.super_admin_first_name,  # type: ignore[arg-type]
+            last_name=admin_seed_settings.super_admin_last_name,  # type: ignore[arg-type]
+            email=email,
+            password_hash=passwords.hash(admin_seed_settings.super_admin_password),  # type: ignore[arg-type]
+            role=Role.SUPER_ADMIN,
+            is_verified=True,
+            is_active=True,
+        )
 
     def override_get_db() -> Iterator[object]:
         yield db_session
@@ -43,21 +58,32 @@ def admin_api_client(
 
 @pytest.mark.db
 def test_super_admin_seed_is_idempotent(
-    db_session: object,
     admin_seed_settings: Settings,
 ) -> None:
-    from app.models.enums import Role
-    from app.repositories.user_repository import UserRepository
+    """Seed returns True once, then False when a super-admin already exists."""
+    from unittest.mock import MagicMock
+
+    from app.services.password_service import PasswordService
     from app.services.super_admin_seed_service import seed_super_admin
 
-    first = seed_super_admin(db_session, settings=admin_seed_settings)  # type: ignore[arg-type]
-    second = seed_super_admin(db_session, settings=admin_seed_settings)  # type: ignore[arg-type]
+    mock_repo = MagicMock()
+    mock_repo.exists_user_with_role.side_effect = [False, True]
+
+    first = seed_super_admin(
+        MagicMock(),
+        settings=admin_seed_settings,
+        user_repository=mock_repo,
+        password_service=PasswordService(),
+    )
+    second = seed_super_admin(
+        MagicMock(),
+        settings=admin_seed_settings,
+        user_repository=mock_repo,
+    )
 
     assert first is True
     assert second is False
-
-    users = UserRepository(db_session)  # type: ignore[arg-type]
-    assert users.exists_user_with_role(Role.SUPER_ADMIN) is True
+    mock_repo.create_user.assert_called_once()
 
 
 @pytest.mark.db

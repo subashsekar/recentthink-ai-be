@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -241,6 +241,7 @@ class OpenRouterClient:
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> AsyncIterator[str]:
         if not self.is_configured:
             msg = "OPENROUTER_API_KEY is not configured."
@@ -271,6 +272,10 @@ class OpenRouterClient:
         ):
             response.raise_for_status()
             async for line in response.aiter_lines():
+                if cancel_check is not None and await cancel_check():
+                    from app.services.chat.stream_cancel import StreamCancelledError
+
+                    raise StreamCancelledError("Client disconnected.")
                 if not line or not line.startswith("data: "):
                     continue
                 chunk = line.removeprefix("data: ").strip()

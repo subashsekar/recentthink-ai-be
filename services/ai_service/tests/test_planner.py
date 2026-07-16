@@ -21,7 +21,10 @@ def test_plan_leetcode_modules(planner: Planner) -> None:
     assert output.execution_mode == ExecutionMode.SINGLE_LLM
     assert ModuleName.TEACHER in output.modules
     assert ModuleName.CODER in output.modules
+    assert ModuleName.CODE_EXPLAINER in output.modules
     assert ModuleName.EVALUATOR in output.modules
+    assert output.modules.index(ModuleName.CODER) < output.modules.index(ModuleName.CODE_EXPLAINER)
+    assert output.modules.index(ModuleName.CODE_EXPLAINER) < output.modules.index(ModuleName.EVALUATOR)
 
 
 def test_plan_dsa_modules(planner: Planner) -> None:

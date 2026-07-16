@@ -50,14 +50,21 @@ def test_get_status(client_with_account_mock: TestClient, account_service_mock: 
 
     account_service_mock.get_status.return_value = AccountStatusResponse(
         is_active=True,
+        is_blocked=False,
         disabled_at=None,
+        blocked_at=None,
     )
     response = client_with_account_mock.get(
         "/account/status",
         headers={"Authorization": "Bearer fake"},
     )
     assert response.status_code == 200
-    assert response.json() == {"is_active": True, "disabled_at": None}
+    assert response.json() == {
+        "is_active": True,
+        "is_blocked": False,
+        "disabled_at": None,
+        "blocked_at": None,
+    }
 
 
 def test_disable_success(

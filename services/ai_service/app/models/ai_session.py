@@ -6,7 +6,9 @@ import uuid
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Enum, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +50,22 @@ class AISession(TimestampedModel, Base):
     mode_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     context_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+    is_pinned: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     messages: Mapped[list[AIMessage]] = relationship(
         back_populates="session",

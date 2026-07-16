@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.models.usage_record import UsageRecord
@@ -62,3 +63,18 @@ class UsageRecordRepository:
             self._db.rollback()
             logger.error("Failed to create usage record: %s", exc)
             raise RepositoryError("Failed to record usage.") from exc
+
+    def delete_by_user(self, user_id: UUID) -> int:
+        """Delete all usage records for a user. Idempotent."""
+        try:
+            result = self._db.execute(
+                delete(UsageRecord).where(UsageRecord.user_id == user_id),
+            )
+            self._db.commit()
+            deleted = int(result.rowcount or 0)
+            logger.info("Deleted %s usage records for user_id=%s", deleted, user_id)
+            return deleted
+        except Exception as exc:
+            self._db.rollback()
+            logger.error("Failed to delete usage for user_id=%s: %s", user_id, exc)
+            raise RepositoryError("Failed to delete user usage records.") from exc

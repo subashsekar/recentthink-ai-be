@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from app.agents.course_generator.adapter import (
@@ -40,6 +41,7 @@ from app.agents.course_generator.schemas import (
     ProgressResponse,
     SessionDetailResponse,
     UpdateProgressRequest,
+    VersionHistoryItem,
 )
 from app.coaching.registry import get_mode_registry
 from app.dependencies.auth import AuthenticatedUser, can_access_session
@@ -49,6 +51,8 @@ from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.course_repository import CourseProgressRepository, CourseRepository
 from app.schemas.ai import ChatRequest, FollowUpRequest as PlatformFollowUpRequest
 from app.services.ai_platform_service import AIPlatformService
+from app.utils.sse import format_sse_event
+from app.utils.version_history import build_assistant_version_history
 from shared.exceptions.auth import ForbiddenError
 from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
@@ -185,6 +189,17 @@ class CourseGeneratorService:
         except Exception as exc:
             logger.error("Course generation failed: %s", exc)
             raise
+
+    async def generate_stream(
+        self,
+        user: AuthenticatedUser,
+        request: GenerateCourseRequest,
+    ) -> AsyncIterator[str]:
+        """Pseudo-token SSE stream: status/thinking then complete with full response."""
+        yield format_sse_event({"type": "status", "status": "thinking"})
+        yield format_sse_event({"type": "status", "status": "generating"})
+        response = await self.generate(user, request)
+        yield format_sse_event({"type": "complete", **response.model_dump(mode="json")})
 
     async def follow_up(self, user: AuthenticatedUser, request: FollowUpRequest) -> FollowUpResponse:
         session = self._sessions.get_by_id(request.session_id)
@@ -460,3 +475,27 @@ class CourseGeneratorService:
         if not can_access_session(user, course.user_id):
             raise ForbiddenError("You do not have access to this course.")
         return course
+
+    def list_versions(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+    ) -> list[VersionHistoryItem]:
+        if self._messages is None:
+            raise RuntimeError("Message repository is not configured.")
+        ai_session_id = self._resolve_ai_session_id(user, session_id)
+        records = build_assistant_version_history(self._messages.list_all_by_session(ai_session_id))
+        return [VersionHistoryItem.model_validate(record.__dict__) for record in records]
+
+    def _resolve_ai_session_id(self, user: AuthenticatedUser, session_id: UUID) -> UUID:
+        session = self._sessions.get_by_id(session_id)
+        if session is not None and session.feature == AIFeature.COURSE_GENERATOR:
+            if not can_access_session(user, session.user_id):
+                raise ForbiddenError("You do not have access to this session.")
+            return session.id
+        course = self._courses.get_by_id(session_id)
+        if course is not None:
+            if not can_access_session(user, course.user_id):
+                raise ForbiddenError("You do not have access to this course.")
+            return course.session_id
+        raise RecordNotFoundError(f"Session '{session_id}' not found.")

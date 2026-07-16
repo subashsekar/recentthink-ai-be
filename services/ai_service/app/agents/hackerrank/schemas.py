@@ -190,6 +190,16 @@ class HackerrankHistoryListResponse(BaseModel):
     total: int
 
 
+class HackerrankModeResponse(BaseModel):
+    """Coaching mode for the HackerRank workspace header."""
+
+    id: str
+    label: str
+    description: str | None = None
+    icon: str | None = None
+    recommended: bool = False
+
+
 class SessionDetailResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -260,6 +270,26 @@ class ProgressResponse(BaseModel):
 
 class DeleteSessionResponse(BaseModel):
     message: str = "Session deleted successfully."
+
+
+class ExportRequest(BaseModel):
+    session_id: UUID
+
+
+class ExportResponse(BaseModel):
+    session_id: UUID
+    format: str
+    filename: str
+    content: str
+    content_type: str
+
+
+class VersionHistoryItem(BaseModel):
+    message_id: UUID
+    created_at: datetime
+    status: str
+    regenerated_from_message_id: UUID | None = None
+    is_current: bool
 
 
 class FollowUpRequest(BaseModel):

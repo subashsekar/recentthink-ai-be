@@ -6,7 +6,8 @@ from uuid import UUID
 
 from app.models.profile import UserProfile
 from app.repositories.profile_repository import ProfileRepository
-from app.schemas.profile import ProfileCreate, ProfileUpdate
+from app.schemas.profile import ProfileCompletionResponse, ProfileCreate, ProfileUpdate
+from app.services.profile_completion import compute_profile_completion
 from sqlalchemy.orm import Session
 
 from shared.exceptions.auth import ForbiddenError
@@ -27,6 +28,22 @@ class ProfileService:
         """Return a profile when the actor is the owner or an admin."""
         self._assert_can_read(actor_id=actor_id, actor_role=actor_role, target_user_id=target_user_id)
         return self._profiles.require_by_user_id(target_user_id)
+
+    def get_profile_completion(
+        self,
+        *,
+        actor_id: UUID,
+        actor_role: str,
+        target_user_id: UUID,
+    ) -> ProfileCompletionResponse:
+        """Return computed completion metrics for the target profile."""
+        self._assert_can_read(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            target_user_id=target_user_id,
+        )
+        profile = self._profiles.require_by_user_id(target_user_id)
+        return compute_profile_completion(profile)
 
     def create_profile(self, *, user_id: UUID, payload: ProfileCreate) -> UserProfile:
         """Create a profile for ``user_id``."""

@@ -79,6 +79,6 @@ async def test_execute_single_llm_pipeline() -> None:
 
     assert response.session_id == session_id
     assert response.status == SessionStatus.COMPLETED
-    assert len(response.modules) == 3
+    assert len(response.modules) == 4
     llm_client.chat_completion.assert_awaited_once()
     usage_client.record_usage.assert_awaited_once()

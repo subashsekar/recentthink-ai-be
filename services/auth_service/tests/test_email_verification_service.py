@@ -145,7 +145,10 @@ def test_verify_email_success(
     result = verification_service.verify_email("raw-token")
 
     assert result is user
-    user_repository.update_user.assert_called_once_with(user.id, is_verified=True)
+    user_repository.update_user.assert_called_once()
+    update_kwargs = user_repository.update_user.call_args.kwargs
+    assert update_kwargs["is_verified"] is True
+    assert update_kwargs["email_verified_at"] is not None
     token_repository.mark_as_used.assert_called_once_with(stored.id)
 
 

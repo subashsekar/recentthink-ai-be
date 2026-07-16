@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.ai_session import AISession
@@ -69,12 +70,15 @@ class AISessionRepository:
         *,
         feature: AIFeature | None = None,
         search: str | None = None,
+        include_archived: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AISession]:
         stmt = select(AISession).where(AISession.user_id == user_id)
         if feature is not None:
             stmt = stmt.where(AISession.feature == feature)
+        if not include_archived:
+            stmt = stmt.where(AISession.is_archived.is_(False))
         if search:
             pattern = f"%{search}%"
             stmt = stmt.where(
@@ -83,7 +87,16 @@ class AISessionRepository:
                     AISession.summary.ilike(pattern),
                 ),
             )
-        stmt = stmt.order_by(desc(AISession.created_at)).limit(limit).offset(offset)
+        stmt = (
+            stmt.order_by(
+                desc(AISession.is_pinned),
+                desc(AISession.last_active_at),
+                desc(AISession.updated_at),
+                desc(AISession.created_at),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
         return list(self._db.scalars(stmt).all())
 
     def list_all(
@@ -91,12 +104,15 @@ class AISessionRepository:
         *,
         feature: AIFeature | None = None,
         search: str | None = None,
+        include_archived: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AISession]:
         stmt = select(AISession)
         if feature is not None:
             stmt = stmt.where(AISession.feature == feature)
+        if not include_archived:
+            stmt = stmt.where(AISession.is_archived.is_(False))
         if search:
             pattern = f"%{search}%"
             stmt = stmt.where(
@@ -105,14 +121,34 @@ class AISessionRepository:
                     AISession.summary.ilike(pattern),
                 ),
             )
-        stmt = stmt.order_by(desc(AISession.created_at)).limit(limit).offset(offset)
+        stmt = (
+            stmt.order_by(
+                desc(AISession.is_pinned),
+                desc(AISession.last_active_at),
+                desc(AISession.updated_at),
+                desc(AISession.created_at),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
         return list(self._db.scalars(stmt).all())
 
-    def count_by_user(self, user_id: UUID, *, feature: AIFeature | None = None) -> int:
+    def count_by_user(
+        self,
+        user_id: UUID,
+        *,
+        feature: AIFeature | None = None,
+        include_archived: bool = False,
+    ) -> int:
         stmt = select(func.count()).select_from(AISession).where(AISession.user_id == user_id)
         if feature is not None:
             stmt = stmt.where(AISession.feature == feature)
+        if not include_archived:
+            stmt = stmt.where(AISession.is_archived.is_(False))
         return int(self._db.scalar(stmt) or 0)
+
+    def touch_last_active(self, session_id: UUID) -> None:
+        self.update_session(session_id, last_active_at=datetime.now(UTC))
 
     def update_session(self, session_id: UUID, **fields: object) -> AISession:
         session = self.get_by_id(session_id)
@@ -138,3 +174,15 @@ class AISessionRepository:
         except Exception as exc:
             self._db.rollback()
             raise RepositoryError("Failed to delete session.") from exc
+
+    def delete_by_user(self, user_id: UUID, *, commit: bool = True) -> int:
+        """Delete all sessions for a user (DB cascades messages and linked rows)."""
+        try:
+            result = self._db.execute(delete(AISession).where(AISession.user_id == user_id))
+            if commit:
+                self._db.commit()
+            return int(result.rowcount or 0)
+        except Exception as exc:
+            self._db.rollback()
+            logger.error("Failed to delete AI sessions for user_id=%s: %s", user_id, exc)
+            raise RepositoryError("Failed to delete user sessions.") from exc

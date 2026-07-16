@@ -10,6 +10,8 @@ from app.api.cache import router as cache_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
 from app.api.internal_admin import router as internal_admin_router
+from app.agents.interview.router import router as interview_router
+from app.services.chat.router import router as chat_router
 from app.agents.course_generator.router import router as course_generator_router
 from app.agents.dsa_pattern.router import router as dsa_pattern_router
 from app.agents.hackerrank.router import router as hackerrank_router
@@ -60,6 +62,8 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(cache_router)
 app.include_router(ai_router)
+app.include_router(chat_router)
+app.include_router(interview_router)
 app.include_router(leetcode_router)
 app.include_router(hackerrank_router)
 app.include_router(course_generator_router)

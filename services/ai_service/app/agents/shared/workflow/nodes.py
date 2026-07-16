@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import UUID
 from uuid import UUID
 
 from app.coaching.registry import get_mode_registry
@@ -27,7 +29,7 @@ from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
 from app.schemas.ai import ChatRequest, ModuleResponse, PlannerOutput
 from app.schemas.llm_response import UnifiedLLMResponse
-from app.schemas.workflow import AIWorkflowState
+from app.agents.shared.workflow.llm_invocation import OpenRouterInvocation, build_openrouter_invocation
 from app.services.execution_trace import ExecutionTraceService
 from app.services.json_validator import JSONValidator
 from app.services.memory.conversation_memory import ConversationMemoryService
@@ -431,6 +433,309 @@ class WorkflowNodes:
                 "errors": [*state.get("errors", []), f"openrouter: {exc}"],
                 "status": WorkflowStatus.FAILED.value,
             }
+
+    def build_openrouter_invocation(self, state: AIWorkflowState) -> OpenRouterInvocation:
+        return build_openrouter_invocation(
+            state=state,
+            prompt_builder=self._prompt_builder,
+            cache_manager=self._cache,
+        )
+
+    async def try_openrouter_cache(
+        self,
+        state: AIWorkflowState,
+        invocation: OpenRouterInvocation,
+        *,
+        trace_entry: dict[str, Any],
+        start: float,
+    ) -> dict[str, Any] | None:
+        """Return openrouter_node-style payload on cache hit, else None."""
+        cache_key = invocation.cache_key
+        requested_sections = invocation.requested_sections
+        prior_payload = invocation.prior_payload
+        if cache_key is None:
+            return None
+        cached = self._cache.get(cache_key)
+        if not isinstance(cached, dict) or not cached:
+            return None
+
+        elapsed = int((time.perf_counter() - start) * 1000)
+        working = cached
+        if requested_sections:
+            working = merge_llm_payload(
+                prior_payload or cached,
+                filter_payload_to_sections(cached, requested_sections),
+                requested_sections=requested_sections,
+            )
+        section_tokens = estimate_section_tokens(
+            filter_payload_to_sections(cached, requested_sections) if requested_sections else cached,
+            completion_tokens=0,
+            requested_sections=requested_sections,
+        )
+        shared_settings = get_settings()
+        model_name = invocation.model or shared_settings.openrouter_model
+        self._complete_trace(
+            state,
+            trace_entry,
+            ModuleName.OPENROUTER,
+            AgentRunStatus.SUCCESS,
+            execution_time_ms=elapsed,
+            latency_ms=elapsed,
+            input_tokens=0,
+            output_tokens=0,
+            estimated_cost=0.0,
+            trace_metadata={
+                "model": model_name,
+                "provider": "cache",
+                "llm_calls": 0,
+                "cache_hit": True,
+                "cache_key": cache_key,
+                "requested_sections": requested_sections,
+                "max_tokens": invocation.max_tokens,
+            },
+        )
+        return {
+            "llm_raw": working,
+            "teacher_output": working.get("teacher"),
+            "coder_output": working.get("coder"),
+            "evaluator_output": working.get("evaluator"),
+            "latency_ms": elapsed,
+            "section_tokens": section_tokens,
+            "regenerated_sections": list(requested_sections) if requested_sections else None,
+            "token_usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "model": model_name,
+                "provider": "cache",
+                "temperature": invocation.temperature,
+                "estimated_cost_usd": 0.0,
+                "estimated_cost_inr": 0.0,
+                "cache_hit": True,
+                "section_tokens": section_tokens,
+                "max_tokens": invocation.max_tokens,
+            },
+        }
+
+    async def apply_llm_response(
+        self,
+        state: AIWorkflowState,
+        *,
+        invocation: OpenRouterInvocation,
+        response: Any,
+        trace_entry: dict[str, Any],
+        start: float,
+        llm_calls: int = 1,
+    ) -> dict[str, Any]:
+        """Validate, merge, cache, and trace a completed LLM response."""
+        planner = invocation.planner
+        requested_sections = invocation.requested_sections
+        prior_payload = invocation.prior_payload
+        cache_key = invocation.cache_key
+        max_json_retries = self._ai_settings.json_validation_max_retries
+        last_validation_error: str | None = None
+        validated_payload: dict[str, Any] | None = None
+
+        for json_attempt in range(max_json_retries + 1):
+            validation = self._validator.validate(response.content, UnifiedLLMResponse)
+            if not validation.success or validation.data is None:
+                last_validation_error = validation.error
+                logger.warning(
+                    "llm_json_retry",
+                    extra={"attempt": json_attempt + 1, "error": last_validation_error},
+                )
+                if json_attempt >= max_json_retries:
+                    break
+                response = await self._llm.chat_completion(
+                    system_prompt=invocation.system_prompt,
+                    user_prompt=invocation.user_prompt,
+                    model=invocation.model,
+                    temperature=invocation.temperature,
+                    max_tokens=invocation.max_tokens,
+                    top_p=invocation.top_p,
+                    frequency_penalty=invocation.frequency_penalty,
+                    presence_penalty=invocation.presence_penalty,
+                )
+                llm_calls += 1
+                continue
+
+            parsed = validation.data.model_dump()
+            normalized = normalize_unified_llm_payload(
+                parsed,
+                planner_metadata=planner.metadata,
+                feature_name=planner.feature.value,
+            )
+            if not requested_sections:
+                feature_empty = feature_payload_missing_content(planner.feature.value, normalized)
+                if (is_llm_response_empty(normalized) or feature_empty) and json_attempt < max_json_retries:
+                    last_validation_error = (
+                        "LLM returned empty feature content"
+                        if feature_empty
+                        else "LLM returned empty teacher/coder content"
+                    )
+                    logger.warning(
+                        "llm_empty_response_retry",
+                        extra={"attempt": json_attempt + 1, "feature": planner.feature.value},
+                    )
+                    response = await self._llm.chat_completion(
+                        system_prompt=invocation.system_prompt,
+                        user_prompt=invocation.user_prompt,
+                        model=invocation.model,
+                        temperature=invocation.temperature,
+                        max_tokens=invocation.max_tokens,
+                        top_p=invocation.top_p,
+                        frequency_penalty=invocation.frequency_penalty,
+                        presence_penalty=invocation.presence_penalty,
+                    )
+                    llm_calls += 1
+                    continue
+
+                if feature_empty:
+                    last_validation_error = "LLM returned empty feature content"
+                    validated_payload = None
+                    break
+
+            validated_payload = normalized
+            break
+
+        elapsed = int((time.perf_counter() - start) * 1000)
+        if validated_payload is None:
+            self._complete_trace(
+                state,
+                trace_entry,
+                ModuleName.OPENROUTER,
+                AgentRunStatus.FAILED,
+                execution_time_ms=elapsed,
+                latency_ms=response.latency_ms if response else 0,
+                error_message=last_validation_error or "JSON validation failed",
+            )
+            return {
+                "errors": [
+                    *state.get("errors", []),
+                    f"openrouter: {last_validation_error or 'invalid JSON'}",
+                ],
+                "status": WorkflowStatus.PARTIAL.value,
+            }
+
+        generated_only = (
+            filter_payload_to_sections(validated_payload, requested_sections)
+            if requested_sections
+            else validated_payload
+        )
+        merged_payload = merge_llm_payload(
+            prior_payload,
+            generated_only if requested_sections else validated_payload,
+            requested_sections=requested_sections,
+        )
+
+        if cache_key is not None:
+            self._cache.set(
+                cache_key,
+                merged_payload if requested_sections and prior_payload else validated_payload,
+                ttl=self._cache.ttl_for_feature(planner.feature.value),
+            )
+
+        cost = self._cost.estimate_request_cost(
+            input_tokens=response.prompt_tokens,
+            output_tokens=response.completion_tokens,
+        )
+        section_tokens = estimate_section_tokens(
+            generated_only,
+            completion_tokens=response.completion_tokens,
+            requested_sections=requested_sections,
+        )
+        self._complete_trace(
+            state,
+            trace_entry,
+            ModuleName.OPENROUTER,
+            AgentRunStatus.SUCCESS,
+            execution_time_ms=elapsed,
+            latency_ms=response.latency_ms,
+            input_tokens=response.prompt_tokens,
+            output_tokens=response.completion_tokens,
+            estimated_cost=cost.usd,
+            trace_metadata={
+                "model": response.model,
+                "provider": response.provider,
+                "llm_calls": llm_calls,
+                "cache_hit": False,
+                "cache_key": cache_key,
+                "requested_sections": requested_sections,
+                "max_tokens": invocation.max_tokens,
+                "section_tokens": section_tokens,
+            },
+        )
+        return {
+            "llm_raw": merged_payload,
+            "teacher_output": merged_payload.get("teacher"),
+            "coder_output": merged_payload.get("coder"),
+            "evaluator_output": merged_payload.get("evaluator"),
+            "latency_ms": response.latency_ms,
+            "section_tokens": section_tokens,
+            "regenerated_sections": list(requested_sections) if requested_sections else None,
+            "token_usage": {
+                "input_tokens": response.prompt_tokens,
+                "output_tokens": response.completion_tokens,
+                "total_tokens": response.total_tokens,
+                "model": response.model,
+                "provider": response.provider,
+                "temperature": response.temperature,
+                "estimated_cost_usd": cost.usd,
+                "estimated_cost_inr": cost.inr,
+                "cache_hit": False,
+                "section_tokens": section_tokens,
+                "max_tokens": invocation.max_tokens,
+            },
+        }
+
+    async def run_post_llm_pipeline(
+        self,
+        state: AIWorkflowState,
+        *,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
+        assistant_ids_before: set[UUID] | None = None,
+    ) -> dict[str, Any]:
+        """Run teacher → coder → code_explainer → evaluator → persist sequentially."""
+        merged: dict[str, Any] = dict(state)
+        for node_name in ("teacher", "coder", "code_explainer", "evaluator", "persist"):
+            if cancel_check is not None and await cancel_check():
+                self.rollback_stream_assistant_messages(
+                    merged.get("session_id"),
+                    assistant_ids_before or set(),
+                )
+                return {**merged, "cancelled": True}
+            node_fn = getattr(self, f"{node_name}_node")
+            result = await node_fn(merged)
+            merged.update(result)
+        return merged
+
+    def snapshot_assistant_message_ids(self, session_id: str | None) -> set[UUID]:
+        if self._messages is None or not session_id:
+            return set()
+        from app.models.enums import MessageRole
+
+        messages = self._messages.list_by_session(UUID(session_id), limit=5000, offset=0)
+        return {message.id for message in messages if message.role == MessageRole.ASSISTANT}
+
+    def rollback_stream_assistant_messages(
+        self,
+        session_id: str | None,
+        assistant_ids_before: set[UUID],
+    ) -> None:
+        if self._messages is None or not session_id:
+            return
+        from app.models.enums import MessageRole
+
+        messages = self._messages.list_by_session(UUID(session_id), limit=5000, offset=0)
+        for message in messages:
+            if message.role == MessageRole.ASSISTANT and message.id not in assistant_ids_before:
+                try:
+                    self._messages.delete_message(message.id)
+                except Exception as exc:
+                    logger.warning(
+                        "rollback_assistant_message_failed",
+                        extra={"message_id": str(message.id), "error": str(exc)},
+                    )
 
     async def teacher_node(self, state: AIWorkflowState) -> dict[str, Any]:
         return await self._run_module_node(state, ModuleName.TEACHER)

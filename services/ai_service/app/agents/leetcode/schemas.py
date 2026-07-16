@@ -109,6 +109,21 @@ class CoderOutput(BaseModel):
     optimal: CoderSolution | None = None
 
 
+class CodeExplainerSolution(BaseModel):
+    label: str
+    language: str
+    beginner: dict
+    intermediate: dict
+    interview: dict
+    time_complexity: str | None = None
+    space_complexity: str | None = None
+
+
+class CodeExplainerOutput(BaseModel):
+    solutions: list[CodeExplainerSolution] = Field(default_factory=list)
+    languages_supported: list[str] = Field(default_factory=list)
+
+
 class EvaluatorOutput(BaseModel):
     """Structured evaluator agent response."""
 
@@ -138,6 +153,7 @@ class AnalyzeResponse(BaseModel):
     problem: ProblemData
     planner: PlannerOutput
     teacher: str
+    code_explainer: CodeExplainerOutput
     coder: CoderOutput
     evaluator: EvaluatorOutput
     total_tokens: int
@@ -293,6 +309,28 @@ class DeleteSessionResponse(BaseModel):
     """Confirmation of session deletion."""
 
     message: str = "Session deleted successfully."
+
+
+class ExportRequest(BaseModel):
+    """Export a LeetCode analysis session."""
+
+    session_id: UUID
+
+
+class ExportResponse(BaseModel):
+    session_id: UUID
+    format: str
+    filename: str
+    content: str
+    content_type: str
+
+
+class VersionHistoryItem(BaseModel):
+    message_id: UUID
+    created_at: datetime
+    status: str
+    regenerated_from_message_id: UUID | None = None
+    is_current: bool
 
 
 class FollowUpRequest(BaseModel):

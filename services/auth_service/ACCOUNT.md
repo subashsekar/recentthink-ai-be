@@ -33,8 +33,9 @@ Content-Type: application/json
 { "password": "CurrentP@ssw0rd", "confirm": true }
 ```
 
-Returns **204**. Cascades auth tokens + `user_profiles`. Publishes placeholder
-`AccountDeleted` event for AI/usage cleanup in other services.
+Returns **204**. Cascades auth tokens + `user_profiles`. Publishes
+`AccountDeleted` and best-effort purges AI / Usage orphans via
+`DELETE /internal/admin/users/{user_id}` (failures are logged, not raised).
 
 `confirm: false` → **400**.
 
@@ -51,7 +52,7 @@ Security log (no passwords):
 
 - `user_disabled_account` — `user_id`, `ip`, `user_agent`, `timestamp`
 - `user_deleted_account` — same
-- `account_deleted_event` — placeholder cross-service hook
+- `account_deleted_event` — cross-service hook; triggers AI/Usage purge HTTP calls
 
 ## Migration
 

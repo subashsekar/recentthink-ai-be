@@ -7,6 +7,7 @@ from uuid import UUID
 from app.database import get_db
 from app.dependencies.auth import require_internal_service
 from app.repositories.usage_analytics_repository import UsageAnalyticsRepository
+from app.repositories.usage_record_repository import UsageRecordRepository
 from app.schemas.admin_internal import (
     AnalyticsDashboardResponse,
     BatchUserStatsResponse,
@@ -18,6 +19,7 @@ from app.schemas.admin_internal import (
     ProviderAnalyticsListResponse,
     TokenAnalyticsResponse,
     UsageAnalyticsResponse,
+    UserPurgeResponse,
     UserUsageDetailResponse,
     UserUsageListResponse,
     UserUsageResponse,
@@ -32,6 +34,12 @@ def get_usage_analytics_repository(
     db: Session = Depends(get_db),
 ) -> UsageAnalyticsRepository:
     return UsageAnalyticsRepository(db)
+
+
+def get_usage_record_repository(
+    db: Session = Depends(get_db),
+) -> UsageRecordRepository:
+    return UsageRecordRepository(db)
 
 
 @router.get(
@@ -200,3 +208,17 @@ def user_usage(
     repo: UsageAnalyticsRepository = Depends(get_usage_analytics_repository),
 ) -> UserUsageResponse:
     return UserUsageResponse(items=repo.user_usage(user_id, limit=limit))
+
+
+@router.delete(
+    "/users/{user_id}",
+    response_model=UserPurgeResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+def purge_user(
+    user_id: UUID,
+    repo: UsageRecordRepository = Depends(get_usage_record_repository),
+) -> UserPurgeResponse:
+    """Best-effort purge of usage_records for a deleted account."""
+    deleted = repo.delete_by_user(user_id)
+    return UserPurgeResponse(user_id=str(user_id), records_deleted=deleted)

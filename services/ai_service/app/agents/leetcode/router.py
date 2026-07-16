@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Annotated
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.agents.leetcode.dependencies import get_leetcode_service
 from app.agents.leetcode.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     DeleteSessionResponse,
+    ExportRequest,
+    ExportResponse,
     FollowUpRequest,
     FollowUpResponse,
     LeetCodeAgentInfoResponse,
@@ -21,6 +25,7 @@ from app.agents.leetcode.schemas import (
     SessionDetailResponse,
     SessionSummaryResponse,
     UpdateSessionRequest,
+    VersionHistoryItem,
 )
 from app.agents.leetcode.service import LeetCodeService
 from app.core.rate_limit import (
@@ -31,8 +36,6 @@ from app.core.rate_limit import (
 from app.dependencies.auth import AuthenticatedUser, require_authenticated_user
 from app.schemas.common import ErrorResponse
 from app.utils.streaming import should_stream
-from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/leetcode", tags=["leetcode"])
 
@@ -94,7 +97,7 @@ def list_agents(
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
     leetcode_service: LeetCodeService = Depends(get_leetcode_service),
 ) -> list[LeetCodeAgentInfoResponse]:
-    """List the five declared LeetCode pipeline agents."""
+    """List the six declared LeetCode pipeline agents."""
     _ = current_user
     return leetcode_service.list_agents()
 
@@ -198,3 +201,60 @@ def delete_session(
     """Delete a LeetCode session and its conversation history."""
     leetcode_service.delete_session(current_user, session_id)
     return DeleteSessionResponse()
+
+
+@router.get(
+    "/sessions/{session_id}/versions",
+    response_model=list[VersionHistoryItem],
+    responses=_ERROR_RESPONSES,
+)
+def list_session_versions(
+    session_id: UUID,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> list[VersionHistoryItem]:
+    """Return assistant message version history for a LeetCode session."""
+    return leetcode_service.list_versions(current_user, session_id)
+
+
+@router.post(
+    "/export/markdown",
+    response_model=ExportResponse,
+    responses=_ERROR_RESPONSES,
+)
+def export_markdown(
+    payload: ExportRequest,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> ExportResponse:
+    return leetcode_service.export(current_user, payload, fmt="markdown")
+
+
+@router.post(
+    "/export/json",
+    response_model=ExportResponse,
+    responses=_ERROR_RESPONSES,
+)
+def export_json(
+    payload: ExportRequest,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> ExportResponse:
+    return leetcode_service.export(current_user, payload, fmt="json")
+
+
+@router.post(
+    "/export/pdf",
+    responses=_ERROR_RESPONSES,
+)
+def export_pdf(
+    payload: ExportRequest,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    leetcode_service: LeetCodeService = Depends(get_leetcode_service),
+) -> Response:
+    result = leetcode_service.export(current_user, payload, fmt="pdf")
+    return Response(
+        content=result.content.encode("latin-1"),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
+    )

@@ -11,6 +11,7 @@ from app.models.enums import AIFeature, ModuleName
 from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.conversation_memory_repository import ConversationMemoryRepository
+from app.services.chat.message_metadata import should_hide_message
 from app.schemas.ai import (
     ConversationMemoryResponse,
     HistoryListResponse,
@@ -53,6 +54,9 @@ class HistoryManager:
             summary=session.summary,
             model_id=model_id,
             mode_id=mode_id,
+            is_archived=bool(getattr(session, "is_archived", False)),
+            is_pinned=bool(getattr(session, "is_pinned", False)),
+            last_active_at=getattr(session, "last_active_at", None),
             created_at=session.created_at,
             updated_at=session.updated_at,
         )
@@ -84,6 +88,7 @@ class HistoryManager:
         *,
         feature: AIFeature | None = None,
         search: str | None = None,
+        include_archived: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> HistoryListResponse:
@@ -91,6 +96,7 @@ class HistoryManager:
             sessions = self._sessions.list_all(
                 feature=feature,
                 search=search,
+                include_archived=include_archived,
                 limit=limit,
                 offset=offset,
             )
@@ -100,10 +106,15 @@ class HistoryManager:
                 user.user_id,
                 feature=feature,
                 search=search,
+                include_archived=include_archived,
                 limit=limit,
                 offset=offset,
             )
-            total = self._sessions.count_by_user(user.user_id, feature=feature)
+            total = self._sessions.count_by_user(
+                user.user_id,
+                feature=feature,
+                include_archived=include_archived,
+            )
 
         return HistoryListResponse(
             sessions=[self._to_summary(session) for session in sessions],
@@ -119,21 +130,29 @@ class HistoryManager:
         *,
         limit: int = 100,
         offset: int = 0,
+        include_hidden: bool = False,
     ) -> SessionDetailResponse:
         session = self._sessions.get_by_id(session_id)
         if session is None:
             raise RecordNotFoundError(f"Session '{session_id}' not found.")
         self._ensure_access(user, session)
         messages = self._messages.list_by_session(session_id, limit=limit, offset=offset)
+        total_messages = self._messages.count_by_session(session_id)
+
+        visible_messages = [
+            message
+            for message in messages
+            if not should_hide_message(message.content_metadata, include_hidden=include_hidden)
+        ]
 
         teacher_responses = [
             self._to_teacher_response(msg)
-            for msg in messages
+            for msg in visible_messages
             if msg.module_name == ModuleName.TEACHER
         ]
         follow_up_messages = [
             self._to_message(msg)
-            for msg in messages
+            for msg in visible_messages
             if msg.role.value == "user" and (msg.content_metadata or {}).get("follow_up_intent")
         ]
 
@@ -155,8 +174,8 @@ class HistoryManager:
 
         return SessionDetailResponse(
             session=self._to_summary(session),
-            messages=[self._to_message(message) for message in messages],
-            total_messages=len(messages),
+            messages=[self._to_message(message) for message in visible_messages],
+            total_messages=total_messages,
             memory=memory_response,
             teacher_responses=teacher_responses,
             follow_up_messages=follow_up_messages,
@@ -168,3 +187,42 @@ class HistoryManager:
             raise RecordNotFoundError(f"Session '{session_id}' not found.")
         self._ensure_access(user, session)
         self._sessions.delete_session(session_id)
+
+    def rename_session(self, user: AuthenticatedUser, session_id: UUID, *, title: str) -> SessionSummaryResponse:
+        session = self._sessions.get_by_id(session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        self._ensure_access(user, session)
+        updated = self._sessions.update_session(session_id, title=title.strip())
+        return self._to_summary(updated)
+
+    def archive_session(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+        *,
+        archived: bool = True,
+    ) -> SessionSummaryResponse:
+        session = self._sessions.get_by_id(session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        self._ensure_access(user, session)
+        updated = self._sessions.update_session(session_id, is_archived=archived)
+        return self._to_summary(updated)
+
+    def pin_session(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+        *,
+        pinned: bool = True,
+    ) -> SessionSummaryResponse:
+        session = self._sessions.get_by_id(session_id)
+        if session is None:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        self._ensure_access(user, session)
+        updated = self._sessions.update_session(session_id, is_pinned=pinned)
+        return self._to_summary(updated)
+
+    def touch_session(self, session_id: UUID) -> None:
+        self._sessions.touch_last_active(session_id)

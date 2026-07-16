@@ -9,6 +9,7 @@ from app.agents.leetcode.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     ChatMessageResponse,
+    CodeExplainerOutput,
     CoderOutput,
     CoderSolution,
     EvaluatorOutput,
@@ -92,6 +93,11 @@ def to_evaluator_output(structured: dict[str, Any] | None) -> EvaluatorOutput:
     )
 
 
+def to_code_explainer_output(structured: dict[str, Any] | None) -> CodeExplainerOutput:
+    payload = structured or {}
+    return CodeExplainerOutput.model_validate(payload)
+
+
 def to_planner_output(chat: ChatResponse, problem: ProblemData) -> PlannerOutput:
     metadata = chat.planner.metadata or {}
     topics = problem.topics or metadata.get("patterns") or []
@@ -116,6 +122,7 @@ def to_analyze_response(
 ) -> AnalyzeResponse:
     teacher_module = next((m for m in chat.modules if m.module == ModuleName.TEACHER), None)
     coder_structured = _module_response(chat, ModuleName.CODER)
+    code_explainer_structured = _module_response(chat, ModuleName.CODE_EXPLAINER)
     evaluator_structured = _module_response(chat, ModuleName.EVALUATOR)
     return AnalyzeResponse(
         session_id=chat.session_id,
@@ -124,6 +131,7 @@ def to_analyze_response(
         problem=problem,
         planner=to_planner_output(chat, problem),
         teacher=teacher_module.content if teacher_module else "",
+        code_explainer=to_code_explainer_output(code_explainer_structured),
         coder=to_coder_output(coder_structured),
         evaluator=to_evaluator_output(evaluator_structured),
         total_tokens=chat.total_tokens,
@@ -175,6 +183,7 @@ def _to_agent_name(module_name: ModuleName | None) -> AgentName | None:
         ModuleName.PLANNER: AgentName.PLANNER,
         ModuleName.TEACHER: AgentName.TEACHER,
         ModuleName.CODER: AgentName.CODER,
+        ModuleName.CODE_EXPLAINER: AgentName.CODE_EXPLAINER,
         ModuleName.EVALUATOR: AgentName.EVALUATOR,
     }
     return mapping.get(module_name)

@@ -26,6 +26,18 @@ class AIServiceClient(BaseInternalClient):
             f"/internal/admin/users/{user_id}/history",
         )
 
+    async def purge_user(self, user_id: UUID) -> dict[str, Any] | None:
+        return await self._request("DELETE", f"/internal/admin/users/{user_id}")
+
+    async def cache_health(self) -> dict[str, Any]:
+        """Fetch AI Service in-memory cache statistics (public /cache/health)."""
+        import httpx
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{self._base_url.rstrip('/')}/cache/health")
+            response.raise_for_status()
+            return response.json()
+
     async def health(self) -> tuple[str, float]:
         import time
 

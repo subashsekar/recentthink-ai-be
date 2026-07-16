@@ -190,3 +190,9 @@ class ExportPayloadResponse(BaseModel):
     report: str
     rows: list[dict[str, Any]] = Field(default_factory=list)
     columns: list[str] = Field(default_factory=list)
+
+
+class UserPurgeResponse(BaseModel):
+    user_id: str
+    records_deleted: int = 0
+

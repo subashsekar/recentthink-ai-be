@@ -5,14 +5,15 @@ from __future__ import annotations
 from app.agents.leetcode.agents import LEETCODE_AGENT_SPECS, LeetCodeAgentRole, LeetCodeAgents
 
 
-def test_leetcode_declares_five_agents() -> None:
-    assert len(LEETCODE_AGENT_SPECS) == 5
+def test_leetcode_declares_six_agents() -> None:
+    assert len(LEETCODE_AGENT_SPECS) == 6
     roles = {spec.role for spec in LEETCODE_AGENT_SPECS}
     assert roles == {
         LeetCodeAgentRole.PROBLEM_FETCHER,
         LeetCodeAgentRole.PLANNER,
         LeetCodeAgentRole.TEACHER,
         LeetCodeAgentRole.CODER,
+        LeetCodeAgentRole.CODE_EXPLAINER,
         LeetCodeAgentRole.EVALUATOR,
     }
 
@@ -31,3 +32,5 @@ def test_leetcode_agents_bundle_wires_instances() -> None:
     agents = LeetCodeAgents.create_default()
     assert agents.get(LeetCodeAgentRole.PLANNER) is agents.planner
     assert agents.get(LeetCodeAgentRole.TEACHER) is agents.teacher
+    assert agents.get(LeetCodeAgentRole.CODE_EXPLAINER) is agents.code_explainer
+    assert agents.get(LeetCodeAgentRole.EVALUATOR) is agents.evaluator

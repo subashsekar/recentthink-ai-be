@@ -9,7 +9,12 @@ from app.schemas.ai import ChatRequest, PlannerOutput
 from shared.exceptions.base import ValidationException
 
 _FEATURE_MODULES: dict[AIFeature, list[ModuleName]] = {
-    AIFeature.LEETCODE: [ModuleName.TEACHER, ModuleName.CODER, ModuleName.EVALUATOR],
+    AIFeature.LEETCODE: [
+        ModuleName.TEACHER,
+        ModuleName.CODER,
+        ModuleName.CODE_EXPLAINER,
+        ModuleName.EVALUATOR,
+    ],
     AIFeature.HACKERRANK: [
         ModuleName.TEACHER,
         ModuleName.CODER,

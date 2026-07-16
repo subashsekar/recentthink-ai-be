@@ -86,6 +86,9 @@ class UsageServiceClient(BaseInternalClient):
     async def user_usage(self, user_id: UUID) -> dict[str, Any]:
         return await self._request("GET", f"/internal/admin/users/{user_id}")
 
+    async def purge_user(self, user_id: UUID) -> dict[str, Any] | None:
+        return await self._request("DELETE", f"/internal/admin/users/{user_id}")
+
     async def health(self) -> tuple[str, float]:
         import time
 

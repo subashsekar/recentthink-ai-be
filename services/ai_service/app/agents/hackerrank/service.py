@@ -17,30 +17,39 @@ from app.agents.hackerrank.adapter import (
 )
 from app.agents.hackerrank.agents import HackerrankAgents
 from app.agents.hackerrank.catalog import list_examples as catalog_examples
+from app.agents.hackerrank.catalog import list_modes as catalog_modes
 from app.agents.hackerrank.problem_fetcher import HackerrankProblemFetcher
 from app.agents.hackerrank.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    ExportRequest,
+    ExportResponse,
     FollowUpRequest,
     FollowUpResponse,
     HackerrankAgentInfoResponse,
     HackerrankExampleResponse,
     HackerrankHistoryListResponse,
+    HackerrankModeResponse,
     ManualInputRequiredResponse,
     ProblemData,
     ProgressResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
     UpdateSessionRequest,
+    VersionHistoryItem,
 )
 from app.coaching.registry import get_mode_registry
 from app.dependencies.auth import AuthenticatedUser, can_access_session
 from app.models.enums import AIFeature, SessionStatus
+from app.repositories.ai_message_repository import AIMessageRepository
 from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.hackerrank_progress_repository import HackerrankProgressRepository
 from app.schemas.ai import ChatRequest, FollowUpRequest as PlatformFollowUpRequest
 from app.services.ai_platform_service import AIPlatformService
+from app.services.chat.export_service import ConversationExportService
+from app.services.chat.schemas import ChatExportRequest, ExportFormat, ExportType
 from app.utils.sse import format_sse_event
+from app.utils.version_history import build_assistant_version_history
 from shared.exceptions.auth import ForbiddenError
 from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
@@ -63,12 +72,16 @@ class HackerRankService:
         platform_service: AIPlatformService,
         session_repo: AISessionRepository,
         progress_repo: HackerrankProgressRepository,
+        message_repo: AIMessageRepository | None = None,
+        export_service: ConversationExportService | None = None,
         agents: HackerrankAgents | None = None,
         problem_fetcher: HackerrankProblemFetcher | None = None,
     ) -> None:
         self._platform = platform_service
         self._sessions = session_repo
         self._progress = progress_repo
+        self._messages = message_repo
+        self._export = export_service
         self._agents = agents or HackerrankAgents.create_default()
         self._fetcher = problem_fetcher or self._agents.problem_fetcher
 
@@ -353,3 +366,51 @@ class HackerRankService:
             strong_topics=list(progress.strong_topics or []),
             updated_at=progress.updated_at,
         )
+
+    def export(
+        self,
+        user: AuthenticatedUser,
+        request: ExportRequest,
+        *,
+        fmt: str,
+    ) -> ExportResponse:
+        if self._export is None:
+            raise RuntimeError("Export service is not configured.")
+        self._ensure_feature_session(user, request.session_id)
+        result = self._export.export_session(
+            user,
+            ChatExportRequest(
+                session_id=request.session_id,
+                format=ExportFormat(fmt),
+                export_type=ExportType.SOLUTION,
+            ),
+        )
+        return ExportResponse(
+            session_id=result.session_id,
+            format=result.format.value,
+            filename=result.filename,
+            content=result.content,
+            content_type=result.content_type,
+        )
+
+    def list_modes(self) -> list[HackerrankModeResponse]:
+        return catalog_modes()
+
+    def list_versions(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+    ) -> list[VersionHistoryItem]:
+        if self._messages is None:
+            raise RuntimeError("Message repository is not configured.")
+        self._ensure_feature_session(user, session_id)
+        records = build_assistant_version_history(self._messages.list_all_by_session(session_id))
+        return [VersionHistoryItem.model_validate(record.__dict__) for record in records]
+
+    def _ensure_feature_session(self, user: AuthenticatedUser, session_id: UUID):
+        session = self._sessions.get_by_id(session_id)
+        if session is None or session.feature != AIFeature.HACKERRANK:
+            raise RecordNotFoundError(f"Session '{session_id}' not found.")
+        if not can_access_session(user, session.user_id):
+            raise ForbiddenError("You do not have access to this session.")
+        return session

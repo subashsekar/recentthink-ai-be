@@ -1,12 +1,13 @@
 """LeetCode pipeline agent declarations.
 
-Five agents participate in every LeetCode analyze request:
+Six agents participate in every LeetCode analyze request:
 
 1. **Problem Fetcher** — LeetCode-specific; runs before the shared workflow.
 2. **Planner** — deterministic classification; no OpenRouter.
 3. **Teacher** — formats structured JSON; no OpenRouter.
 4. **Coder** — formats solutions; no OpenRouter.
-5. **Evaluator** — formats feedback; no OpenRouter.
+5. **Code Explainer** — formats line-by-line explanations; no OpenRouter.
+6. **Evaluator** — formats feedback; no OpenRouter.
 
 OpenRouter is invoked exactly once inside :class:`AIWorkflowEngine` (shared).
 These agents never make independent LLM calls.
@@ -19,6 +20,7 @@ from enum import StrEnum
 from typing import Any
 
 from app.agents.leetcode.problem_fetcher import LeetCodeProblemFetcher
+from app.agents.shared.code_explainer.module import CodeExplainerModule
 from app.agents.shared.coder.module import CoderModule
 from app.agents.shared.evaluator.module import EvaluatorModule
 from app.agents.shared.planner.planner import Planner
@@ -33,6 +35,7 @@ class LeetCodeAgentRole(StrEnum):
     PLANNER = "planner"
     TEACHER = "teacher"
     CODER = "coder"
+    CODE_EXPLAINER = "code_explainer"
     EVALUATOR = "evaluator"
 
 
@@ -87,6 +90,15 @@ LEETCODE_AGENT_SPECS: tuple[LeetCodeAgentSpec, ...] = (
         shared_path="app.agents.shared.coder.module.CoderModule",
     ),
     LeetCodeAgentSpec(
+        role=LeetCodeAgentRole.CODE_EXPLAINER,
+        name="Code Explainer",
+        description="Explain code line-by-line for multiple audiences from structured JSON. No extra LLM call.",
+        uses_openrouter=False,
+        workflow_module=ModuleName.CODE_EXPLAINER,
+        prompt_module=None,
+        shared_path="app.agents.shared.code_explainer.module.CodeExplainerModule",
+    ),
+    LeetCodeAgentSpec(
         role=LeetCodeAgentRole.EVALUATOR,
         name="Evaluator",
         description="Format complexity analysis, mistakes, and interview follow-ups.",
@@ -103,12 +115,13 @@ LEETCODE_OPENROUTER_PROMPT = "master"
 
 @dataclass
 class LeetCodeAgents:
-    """Wired instances of the five LeetCode pipeline agents."""
+    """Wired instances of the six LeetCode pipeline agents."""
 
     problem_fetcher: LeetCodeProblemFetcher
     planner: Planner
     teacher: TeacherModule
     coder: CoderModule
+    code_explainer: CodeExplainerModule
     evaluator: EvaluatorModule
 
     @classmethod
@@ -119,6 +132,7 @@ class LeetCodeAgents:
             planner=Planner(),
             teacher=TeacherModule(),
             coder=CoderModule(),
+            code_explainer=CodeExplainerModule(),
             evaluator=EvaluatorModule(),
         )
 
@@ -129,11 +143,12 @@ class LeetCodeAgents:
             LeetCodeAgentRole.PLANNER: self.planner,
             LeetCodeAgentRole.TEACHER: self.teacher,
             LeetCodeAgentRole.CODER: self.coder,
+            LeetCodeAgentRole.CODE_EXPLAINER: self.code_explainer,
             LeetCodeAgentRole.EVALUATOR: self.evaluator,
         }
         return mapping[role]
 
     @staticmethod
     def list_specs() -> list[LeetCodeAgentSpec]:
-        """Return static declarations for all five agents."""
+        """Return static declarations for all six agents."""
         return list(LEETCODE_AGENT_SPECS)

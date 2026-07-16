@@ -538,6 +538,14 @@ class CourseAgentInfoResponse(BaseModel):
     shared_path: str
 
 
+class VersionHistoryItem(BaseModel):
+    message_id: UUID
+    created_at: datetime
+    status: str
+    regenerated_from_message_id: UUID | None = None
+    is_current: bool
+
+
 class DeleteCourseResponse(BaseModel):
     message: str = "Course deleted successfully."
 

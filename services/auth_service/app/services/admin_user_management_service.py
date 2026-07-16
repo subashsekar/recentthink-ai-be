@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from app.events.account_events import publish_account_deleted
 from app.models.enums import Role
 from app.models.user import User
 from app.repositories.refresh_token_repository import RefreshTokenRepository
@@ -223,6 +224,7 @@ class AdminUserManagementService:
         except Exception:
             self._db.rollback()
             raise
+        publish_account_deleted(user_id, email=user.email)
         log_security_event(
             "admin_deleted_user",
             admin_id=str(actor_id),

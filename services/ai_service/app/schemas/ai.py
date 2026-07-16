@@ -103,6 +103,9 @@ class SessionSummaryResponse(BaseModel):
     summary: str | None
     model_id: str | None = None
     mode_id: str | None = None
+    is_archived: bool = False
+    is_pinned: bool = False
+    last_active_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

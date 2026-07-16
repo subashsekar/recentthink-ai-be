@@ -218,3 +218,44 @@ def test_hackerrank_progress(client: TestClient, mock_service: MagicMock) -> Non
     assert resp.status_code == 200
     assert resp.json()["problems_completed"] == 1
 
+
+
+def test_hackerrank_modes(client: TestClient, mock_service: MagicMock) -> None:
+    from app.agents.hackerrank.schemas import HackerrankModeResponse
+
+    mock_service.list_modes.return_value = [
+        HackerrankModeResponse(
+            id="learning",
+            label="Learning",
+            description="Step-by-step coaching",
+            icon="book",
+            recommended=True,
+        ),
+    ]
+    resp = client.get("/hackerrank/modes", headers={"Authorization": "Bearer fake"})
+    assert resp.status_code == 200
+    assert resp.json()[0]["id"] == "learning"
+    mock_service.list_modes.assert_called_once()
+
+
+def test_hackerrank_versions(client: TestClient, mock_service: MagicMock) -> None:
+    from app.agents.hackerrank.schemas import VersionHistoryItem
+
+    session_id = uuid4()
+    message_id = uuid4()
+    mock_service.list_versions.return_value = [
+        VersionHistoryItem(
+            message_id=message_id,
+            created_at=datetime.now(tz=UTC),
+            status="completed",
+            regenerated_from_message_id=None,
+            is_current=True,
+        ),
+    ]
+    resp = client.get(
+        f"/hackerrank/sessions/{session_id}/versions",
+        headers={"Authorization": "Bearer fake"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()[0]["message_id"] == str(message_id)
+    mock_service.list_versions.assert_called_once()

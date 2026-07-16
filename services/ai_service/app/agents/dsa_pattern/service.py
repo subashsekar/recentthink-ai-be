@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
 
@@ -38,6 +39,7 @@ from app.agents.dsa_pattern.schemas import (
     ProgressResponse,
     SessionDetailResponse,
     UpdateProgressRequest,
+    VersionHistoryItem,
 )
 from app.coaching.registry import get_mode_registry
 from app.dependencies.auth import AuthenticatedUser, can_access_session
@@ -47,6 +49,8 @@ from app.repositories.ai_session_repository import AISessionRepository
 from app.repositories.dsa_pattern_repository import PatternProgressRepository, PatternSessionRepository
 from app.schemas.ai import ChatRequest, FollowUpRequest as PlatformFollowUpRequest
 from app.services.ai_platform_service import AIPlatformService
+from app.utils.sse import format_sse_event
+from app.utils.version_history import build_assistant_version_history
 from shared.exceptions.auth import ForbiddenError
 from shared.exceptions.repository import RecordNotFoundError
 from shared.logging import get_logger
@@ -201,6 +205,17 @@ class DsaPatternService:
         except Exception as exc:
             logger.error("DSA pattern generation failed: %s", exc)
             raise
+
+    async def generate_stream(
+        self,
+        user: AuthenticatedUser,
+        request: GeneratePatternRequest,
+    ) -> AsyncIterator[str]:
+        """Pseudo-token SSE stream: status/thinking then complete with full response."""
+        yield format_sse_event({"type": "status", "status": "thinking"})
+        yield format_sse_event({"type": "status", "status": "generating"})
+        response = await self.generate(user, request)
+        yield format_sse_event({"type": "complete", **response.model_dump(mode="json")})
 
     async def follow_up(self, user: AuthenticatedUser, request: FollowUpRequest) -> FollowUpResponse:
         session = self._sessions.get_by_id(request.session_id)
@@ -429,6 +444,19 @@ class DsaPatternService:
         if not can_access_session(user, row.user_id):
             raise ForbiddenError("You do not have access to this pattern session.")
         return row
+
+    def list_versions(
+        self,
+        user: AuthenticatedUser,
+        session_id: UUID,
+    ) -> list[VersionHistoryItem]:
+        if self._messages is None:
+            raise RuntimeError("Message repository is not configured.")
+        pattern_session = self._require_by_ai_session(user, session_id)
+        records = build_assistant_version_history(
+            self._messages.list_all_by_session(pattern_session.session_id),
+        )
+        return [VersionHistoryItem.model_validate(record.__dict__) for record in records]
 
     def _require_by_ai_session(self, user: AuthenticatedUser, session_id: UUID):
         session = self._sessions.get_by_id(session_id)

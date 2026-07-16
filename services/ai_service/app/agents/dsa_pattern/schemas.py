@@ -524,5 +524,13 @@ class PatternAgentInfoResponse(BaseModel):
     shared_path: str
 
 
+class VersionHistoryItem(BaseModel):
+    message_id: UUID
+    created_at: datetime
+    status: str
+    regenerated_from_message_id: UUID | None = None
+    is_current: bool
+
+
 class DeletePatternResponse(BaseModel):
     message: str = "Pattern session deleted successfully."

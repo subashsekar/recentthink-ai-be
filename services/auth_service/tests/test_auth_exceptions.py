@@ -73,6 +73,7 @@ def test_get_current_active_user_rejects_inactive() -> None:
 
     user = MagicMock()
     user.is_active = False
+    user.is_blocked = False
 
     with pytest.raises(InactiveUserError):
         get_current_active_user(user)
@@ -83,6 +84,7 @@ def test_get_current_admin_requires_admin_role() -> None:
 
     user = MagicMock()
     user.is_active = True
+    user.is_blocked = False
     user.role = Role.USER
 
     with pytest.raises(ForbiddenError):
@@ -116,6 +118,7 @@ def test_resolve_user_from_access_token(client: TestClient) -> None:
     user.role = Role.USER
     user.is_verified = False
     user.is_active = True
+    user.is_blocked = False
     user.created_at = datetime.now(tz=UTC)
     user.updated_at = datetime.now(tz=UTC)
     user.password_changed_at = datetime.now(tz=UTC)

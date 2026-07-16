@@ -39,6 +39,21 @@ async def profile_catchall(request: Request, path: str):
 
 
 @router.api_route(
+    "/users/search",
+    methods=["GET"],
+)
+async def users_search(request: Request):
+    """Legacy alias: ``GET /users/search`` → User Service ``/profile/search``."""
+    return await proxy_to_upstream(
+        request,
+        upstream_client=request.app.state.user_client,
+        upstream_path="/profile/search",
+        service_name="user",
+        stream=should_stream(request),
+    )
+
+
+@router.api_route(
     "/users/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
 )
@@ -48,6 +63,21 @@ async def users_catchall(request: Request, path: str):
         request,
         upstream_client=request.app.state.user_client,
         upstream_path=f"/users/{path}",
+        service_name="user",
+        stream=should_stream(request),
+    )
+
+
+@router.api_route(
+    "/media/{path:path}",
+    methods=["GET", "HEAD"],
+)
+async def media_proxy(request: Request, path: str):
+    """Proxy locally stored user media (avatars) from User Service."""
+    return await proxy_to_upstream(
+        request,
+        upstream_client=request.app.state.user_client,
+        upstream_path=f"/media/{path}",
         service_name="user",
         stream=should_stream(request),
     )

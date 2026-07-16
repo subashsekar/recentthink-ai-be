@@ -19,6 +19,8 @@ _AI_PREFIXES: tuple[str, ...] = (
     "courses",
     "dsa-pattern",
     "ai",
+    "chat",
+    "interview",
 )
 
 
@@ -91,6 +93,30 @@ async def dsa_pattern_proxy(request: Request, path: str = ""):
 )
 async def ai_proxy(request: Request, path: str = ""):
     return await _proxy_ai(request, "ai", path)
+
+
+@router.api_route(
+    "/chat",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/chat/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def chat_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "chat", path)
+
+
+@router.api_route(
+    "/interview",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+@router.api_route(
+    "/interview/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def interview_proxy(request: Request, path: str = ""):
+    return await _proxy_ai(request, "interview", path)
 
 
 # Keep tuple exported for startup / docs introspection.

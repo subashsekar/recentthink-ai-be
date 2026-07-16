@@ -328,3 +328,26 @@ def test_courses_delete_history(client: TestClient, mock_service: MagicMock) -> 
     )
     assert resp.status_code == 200
     assert "deleted" in resp.json()["message"].lower()
+
+
+def test_courses_versions(client: TestClient, mock_service: MagicMock) -> None:
+    from app.agents.course_generator.schemas import VersionHistoryItem
+
+    session_id = uuid4()
+    message_id = uuid4()
+    mock_service.list_versions.return_value = [
+        VersionHistoryItem(
+            message_id=message_id,
+            created_at=datetime.now(tz=UTC),
+            status="completed",
+            regenerated_from_message_id=None,
+            is_current=True,
+        ),
+    ]
+    resp = client.get(
+        f"/courses/sessions/{session_id}/versions",
+        headers={"Authorization": "Bearer fake"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()[0]["message_id"] == str(message_id)
+    mock_service.list_versions.assert_called_once()

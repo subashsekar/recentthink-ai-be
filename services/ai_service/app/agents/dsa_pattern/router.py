@@ -6,6 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.agents.dsa_pattern.dependencies import get_dsa_pattern_service
 from app.agents.dsa_pattern.schemas import (
@@ -25,11 +26,13 @@ from app.agents.dsa_pattern.schemas import (
     ProgressResponse,
     SessionDetailResponse,
     UpdateProgressRequest,
+    VersionHistoryItem,
 )
 from app.agents.dsa_pattern.service import DsaPatternService
 from app.core.rate_limit import DSA_PATTERN_FOLLOWUP_RATE_LIMIT, DSA_PATTERN_GENERATE_RATE_LIMIT, limiter
 from app.dependencies.auth import AuthenticatedUser, require_authenticated_user
 from app.schemas.common import ErrorResponse
+from app.utils.streaming import should_stream
 
 router = APIRouter(prefix="/dsa-pattern", tags=["dsa-pattern"])
 
@@ -55,8 +58,12 @@ async def generate_pattern(
     payload: GeneratePatternRequest,
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
     service: DsaPatternService = Depends(get_dsa_pattern_service),
-) -> GeneratePatternResponse:
-    _ = request
+) -> GeneratePatternResponse | StreamingResponse:
+    if should_stream(request):
+        return StreamingResponse(
+            service.generate_stream(current_user, payload),
+            media_type="text/event-stream",
+        )
     return await service.generate(current_user, payload)
 
 
@@ -117,6 +124,20 @@ def delete_history(
 ) -> DeletePatternResponse:
     service.delete_history(current_user, session_id)
     return DeletePatternResponse()
+
+
+@router.get(
+    "/sessions/{session_id}/versions",
+    response_model=list[VersionHistoryItem],
+    responses=_ERROR_RESPONSES,
+)
+def list_session_versions(
+    session_id: UUID,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    service: DsaPatternService = Depends(get_dsa_pattern_service),
+) -> list[VersionHistoryItem]:
+    """Return assistant message version history for a DSA Pattern session."""
+    return service.list_versions(current_user, session_id)
 
 
 @router.get(

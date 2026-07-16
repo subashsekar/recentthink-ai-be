@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.agents.leetcode.dependencies import get_leetcode_service
 from app.agents.leetcode.schemas import (
     AnalyzeResponse,
+    CodeExplainerOutput,
     CoderOutput,
     EvaluatorOutput,
     FollowUpResponse,
@@ -106,6 +107,7 @@ def test_analyze_success(client: TestClient, mock_leetcode_service: MagicMock) -
                 execution_plan=["Understand", "Solve"],
             ),
             teacher="Think about complements.",
+            code_explainer=CodeExplainerOutput(),
             coder=CoderOutput(),
             evaluator=EvaluatorOutput(
                 time_complexity="O(n)",
@@ -272,3 +274,26 @@ def test_progress_endpoint(client: TestClient, mock_leetcode_service: MagicMock)
     )
     assert response.status_code == 200
     assert response.json()["problems_completed"] == 1
+
+
+def test_leetcode_versions(client: TestClient, mock_leetcode_service: MagicMock) -> None:
+    from app.agents.leetcode.schemas import VersionHistoryItem
+
+    session_id = uuid4()
+    message_id = uuid4()
+    mock_leetcode_service.list_versions.return_value = [
+        VersionHistoryItem(
+            message_id=message_id,
+            created_at=datetime.now(tz=UTC),
+            status="completed",
+            regenerated_from_message_id=None,
+            is_current=True,
+        ),
+    ]
+    response = client.get(
+        f"/leetcode/sessions/{session_id}/versions",
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()[0]["message_id"] == str(message_id)
+    mock_leetcode_service.list_versions.assert_called_once()

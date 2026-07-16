@@ -95,10 +95,16 @@ async def test_courses_dsa_and_users_routes(
         assert (
             await client.get("/users/me", headers={"Authorization": "Bearer x"})
         ).status_code == 200
+        assert (
+            await client.get("/users/search?q=jane", headers={"Authorization": "Bearer x"})
+        ).status_code == 200
+        assert (await client.get("/media/avatars/test.jpg")).status_code == 200
 
     assert "/courses/history" in seen
     assert "/dsa-pattern/examples" in seen
     assert "/users/me" in seen
+    assert "/profile/search" in seen
+    assert "/media/avatars/test.jpg" in seen
 
 
 @pytest.mark.asyncio

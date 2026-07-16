@@ -106,6 +106,7 @@ def test_get_storage_supabase(monkeypatch) -> None:
 
     get_storage.cache_clear()
     monkeypatch.setenv("STORAGE_BACKEND", "supabase")
+    monkeypatch.setenv("STORAGE_PUBLIC_BASE_URL", "")
     monkeypatch.setenv("SUPABASE_URL", "https://abc.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
     monkeypatch.setenv("SUPABASE_STORAGE_BUCKET", "recenthink_user_profile_picture")

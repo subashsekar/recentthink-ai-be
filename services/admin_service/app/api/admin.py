@@ -10,6 +10,7 @@ from app.dependencies.services import (
     get_analytics_service,
     get_audit_service,
     get_dashboard_service,
+    get_feature_flag_service,
     get_notification_service,
     get_system_health_service,
     get_user_management_service,
@@ -20,6 +21,10 @@ from app.schemas.admin import (
     BroadcastNotificationRequest,
     BroadcastNotificationResponse,
     DashboardResponse,
+    FeatureFlagCreate,
+    FeatureFlagListResponse,
+    FeatureFlagResponse,
+    FeatureFlagUpdate,
     HealthResponse,
     ModelAnalyticsResponse,
     MutationResponse,
@@ -31,6 +36,7 @@ from app.schemas.admin import (
 from app.services.analytics_service import AnalyticsService
 from app.services.audit_service import AuditService
 from app.services.dashboard_service import DashboardService
+from app.services.feature_flag_service import FeatureFlagService
 from app.services.notification_service import NotificationService
 from app.services.system_health_service import SystemHealthService
 from app.services.user_management_service import UserManagementService
@@ -202,6 +208,15 @@ async def system_health(
     return await service.get_health()
 
 
+@router.get("/cache-stats")
+async def cache_stats(
+    _admin: AuthenticatedUser = Depends(require_admin_user),
+    service: SystemHealthService = Depends(get_system_health_service),
+) -> dict:
+    """AI Service in-memory cache statistics (hits, misses, TTL, entries)."""
+    return await service.get_cache_stats()
+
+
 @router.post(
     "/notifications/broadcast",
     response_model=BroadcastNotificationResponse,
@@ -212,3 +227,54 @@ async def broadcast_notification(
     service: NotificationService = Depends(get_notification_service),
 ) -> BroadcastNotificationResponse:
     return await service.broadcast(payload, actor_id=admin.user_id)
+
+
+@router.get("/feature-flags", response_model=FeatureFlagListResponse)
+def list_feature_flags(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    _admin: AuthenticatedUser = Depends(require_admin_user),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> FeatureFlagListResponse:
+    return service.list(page=page, page_size=page_size)
+
+
+@router.get("/feature-flags/{key}", response_model=FeatureFlagResponse)
+def get_feature_flag(
+    key: str,
+    _admin: AuthenticatedUser = Depends(require_admin_user),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> FeatureFlagResponse:
+    return service.get_by_key(key)
+
+
+@router.post(
+    "/feature-flags",
+    response_model=FeatureFlagResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_feature_flag(
+    payload: FeatureFlagCreate,
+    admin: AuthenticatedUser = Depends(require_admin_user),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> FeatureFlagResponse:
+    return service.create(payload, actor_id=admin.user_id)
+
+
+@router.patch("/feature-flags/{key}", response_model=FeatureFlagResponse)
+def update_feature_flag(
+    key: str,
+    payload: FeatureFlagUpdate,
+    admin: AuthenticatedUser = Depends(require_admin_user),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> FeatureFlagResponse:
+    return service.update(key, payload, actor_id=admin.user_id)
+
+
+@router.delete("/feature-flags/{key}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_feature_flag(
+    key: str,
+    admin: AuthenticatedUser = Depends(require_admin_user),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> None:
+    service.delete(key, actor_id=admin.user_id)

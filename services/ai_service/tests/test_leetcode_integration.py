@@ -171,7 +171,7 @@ async def test_platform_orchestrator_end_to_end_with_mocked_llm() -> None:
     )
 
     assert result.status == SessionStatus.COMPLETED
-    assert len(result.modules) == 3
+    assert len(result.modules) == 4
     assert result.total_tokens == 120
     llm.chat_completion.assert_awaited_once()
     usage_client.record_usage.assert_awaited_once()

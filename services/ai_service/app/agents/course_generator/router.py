@@ -6,6 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.agents.course_generator.dependencies import get_course_generator_service
 from app.agents.course_generator.schemas import (
@@ -28,11 +29,13 @@ from app.agents.course_generator.schemas import (
     ProgressResponse,
     SessionDetailResponse,
     UpdateProgressRequest,
+    VersionHistoryItem,
 )
 from app.agents.course_generator.service import CourseGeneratorService
 from app.core.rate_limit import COURSE_FOLLOWUP_RATE_LIMIT, COURSE_GENERATE_RATE_LIMIT, limiter
 from app.dependencies.auth import AuthenticatedUser, require_authenticated_user
 from app.schemas.common import ErrorResponse
+from app.utils.streaming import should_stream
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -58,8 +61,12 @@ async def generate_course(
     payload: GenerateCourseRequest,
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
     service: CourseGeneratorService = Depends(get_course_generator_service),
-) -> GenerateCourseResponse:
-    _ = request
+) -> GenerateCourseResponse | StreamingResponse:
+    if should_stream(request):
+        return StreamingResponse(
+            service.generate_stream(current_user, payload),
+            media_type="text/event-stream",
+        )
     return await service.generate(current_user, payload)
 
 
@@ -140,6 +147,20 @@ def get_chat_history_by_session(
 ) -> CourseChatHistoryDetailResponse:
     """Mentor-style lookup when the frontend has session_id from generate/follow-up."""
     return service.get_chat_history_by_session(current_user, session_id)
+
+
+@router.get(
+    "/sessions/{session_id}/versions",
+    response_model=list[VersionHistoryItem],
+    responses=_ERROR_RESPONSES,
+)
+def list_session_versions(
+    session_id: UUID,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    service: CourseGeneratorService = Depends(get_course_generator_service),
+) -> list[VersionHistoryItem]:
+    """Return assistant message version history for a Course Generator session."""
+    return service.list_versions(current_user, session_id)
 
 
 @router.delete(

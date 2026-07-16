@@ -354,6 +354,20 @@ async def test_cors_preflight_allows_localhost_3001(
 
 
 @pytest.mark.asyncio
+async def test_chat_proxy_forwards_to_ai_service(
+    make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/chat/leetcode/sessions"
+        return httpx.Response(200, json={"sessions": [], "total": 0, "limit": 50, "offset": 0})
+
+    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+        resp = await client.get("/chat/leetcode/sessions", headers={"Authorization": "Bearer x"})
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_upstream_503_is_passed_through_after_retries(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:

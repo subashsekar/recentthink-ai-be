@@ -13,6 +13,7 @@ from app.repositories.conversation_memory_repository import ConversationMemoryRe
 from app.repositories.model_usage_repository import ModelUsageRepository
 from app.repositories.prompt_version_repository import PromptVersionRepository
 from app.services.ai_platform_service import AIPlatformService
+from app.services.chat.export_service import ConversationExportService
 from app.services.models.model_registry import ModelRegistry, get_model_registry
 from app.services.execution_trace import ExecutionTraceService
 from app.services.followup.followup_service import FollowUpService
@@ -25,7 +26,12 @@ from sqlalchemy.orm import Session
 
 from shared.database import get_db
 
-__all__ = ["get_ai_platform_service", "get_model_registry"]
+__all__ = [
+    "get_ai_platform_service",
+    "get_chat_service",
+    "get_conversation_export_service",
+    "get_model_registry",
+]
 
 
 def get_ai_platform_service(db: Session = Depends(get_db)) -> AIPlatformService:
@@ -74,4 +80,44 @@ def get_ai_platform_service(db: Session = Depends(get_db)) -> AIPlatformService:
         memory_service=memory_service,
         llm_client=llm_client,
         model_registry=get_model_registry(),
+    )
+
+
+def get_conversation_export_service(db: Session = Depends(get_db)) -> ConversationExportService:
+    session_repo = AISessionRepository(db)
+    message_repo = AIMessageRepository(db)
+    memory_repo = ConversationMemoryRepository(db)
+    history_manager = HistoryManager(
+        session_repo=session_repo,
+        message_repo=message_repo,
+        memory_repo=memory_repo,
+    )
+    return ConversationExportService(
+        history_manager=history_manager,
+        session_repo=session_repo,
+        message_repo=message_repo,
+    )
+
+
+def get_chat_service(db: Session = Depends(get_db)) -> "ChatService":
+    from app.services.chat.chat_service import ChatService
+
+    platform = get_ai_platform_service(db)
+    session_repo = AISessionRepository(db)
+    message_repo = AIMessageRepository(db)
+    memory_repo = ConversationMemoryRepository(db)
+    history_manager = HistoryManager(
+        session_repo=session_repo,
+        message_repo=message_repo,
+        memory_repo=memory_repo,
+    )
+    export_service = get_conversation_export_service(db)
+    orchestrator = platform.orchestrator
+    return ChatService(
+        platform_service=platform,
+        orchestrator=orchestrator,
+        history_manager=history_manager,
+        export_service=export_service,
+        session_repo=session_repo,
+        message_repo=message_repo,
     )

@@ -60,6 +60,14 @@ class AIPlatformService:
     def model_registry(self) -> ModelRegistry:
         return self._models
 
+    @property
+    def orchestrator(self) -> AIPlatformOrchestrator:
+        return self._orchestrator
+
+    @property
+    def memory_service(self) -> ConversationMemoryService | None:
+        return self._memory
+
     async def chat(self, user: AuthenticatedUser, request: ChatRequest) -> ChatResponse:
         session = None
         if request.session_id is not None:

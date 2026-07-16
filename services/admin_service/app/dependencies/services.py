@@ -9,9 +9,11 @@ from app.clients.auth_client import AuthServiceClient
 from app.clients.usage_client import UsageServiceClient
 from app.clients.user_client import UserServiceClient
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.feature_flag_repository import FeatureFlagRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.services.audit_service import AuditService
 from app.services.dashboard_service import DashboardService
+from app.services.feature_flag_service import FeatureFlagService
 from app.services.notification_service import NotificationService
 from app.services.system_health_service import SystemHealthService
 from app.services.user_management_service import UserManagementService
@@ -46,6 +48,10 @@ def get_audit_repository(db: DbSession) -> AuditRepository:
 
 def get_notification_repository(db: DbSession) -> NotificationRepository:
     return NotificationRepository(db)
+
+
+def get_feature_flag_repository(db: DbSession) -> FeatureFlagRepository:
+    return FeatureFlagRepository(db)
 
 
 def get_audit_service(
@@ -118,5 +124,15 @@ def get_notification_service(
     return NotificationService(
         repository=repo,
         auth_client=auth,
+        audit_service=audit,
+    )
+
+
+def get_feature_flag_service(
+    repo: FeatureFlagRepository = Depends(get_feature_flag_repository),
+    audit: AuditService = Depends(get_audit_service),
+) -> FeatureFlagService:
+    return FeatureFlagService(
+        repository=repo,
         audit_service=audit,
     )
