@@ -287,6 +287,8 @@ class ChatService:
                     "total_tokens": response.total_tokens,
                     "latency_ms": response.latency_ms,
                     "execution_time_ms": response.execution_time_ms,
+                    "context_match": response.context_match,
+                    "rejected": response.rejected,
                     "action": "follow_up",
                 },
                 event_id=ids.next(),

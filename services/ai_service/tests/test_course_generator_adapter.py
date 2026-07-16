@@ -142,15 +142,56 @@ def test_extract_course_from_chat() -> None:
 
 
 def test_content_to_markdown_and_pdf() -> None:
-    content = CourseContent(
-        overview=CourseOverview(title="Test Course", description="Desc", learning_objectives=["Obj1"]),
-        roadmap=[WeekRoadmap(week=1, title="Week 1", focus="Basics")],
-        lessons=[LessonContent(title="L1", concept_explanation="Explain", summary="Sum")],
-        learning_tips=["Tip"],
+    content = CourseContent.model_validate(
+        {
+            "overview": {"title": "Test Course", "description": "Desc", "learning_objectives": ["Obj1"]},
+            "roadmap": [{"week": 1, "title": "Week 1", "focus": "Basics"}],
+            "lessons": [{"title": "L1", "concept_explanation": "Explain", "summary": "Sum"}],
+            "assignments": [
+                {
+                    "week": 1,
+                    "title": "Week 1 Lab",
+                    "type": "weekly",
+                    "description": "Practice setup and first scripts.",
+                    "tasks": ["Create project folder", "Write hello.py"],
+                    "coding_exercises": ["Write add(a,b) returning a+b. Example: add(2,3)->5"],
+                    "review_questions": ["What is a virtual environment?"],
+                    "estimated_hours": 3,
+                }
+            ],
+            "projects": [
+                {
+                    "title": "Calculator",
+                    "level": "beginner",
+                    "description": "CLI calculator",
+                    "requirements": ["Support + - * /"],
+                    "implementation_steps": ["Parse input", "Compute result"],
+                    "expected_output": "Working CLI",
+                    "evaluation_criteria": ["Handles divide by zero"],
+                }
+            ],
+            "assessments": [
+                {
+                    "week": 1,
+                    "title": "Week 1 Check",
+                    "type": "weekly",
+                    "questions": ["Explain variables"],
+                    "rubric": ["Accuracy"],
+                    "scoring": "10 points",
+                    "completion_criteria": ["Score >= 7"],
+                }
+            ],
+            "learning_tips": ["Tip"],
+        }
     )
     md = content_to_markdown(content)
     assert "# Test Course" in md
     assert "Week 1" in md
+    assert "**Coding exercises**" in md
+    assert "Write add(a,b)" in md
+    assert "**Review questions**" in md
+    assert "**Evaluation criteria**" in md
+    assert "**Rubric**" in md
     pdf = markdown_to_simple_pdf(md, title="Test Course")
     assert pdf.startswith(b"%PDF")
     assert b"%%EOF" in pdf

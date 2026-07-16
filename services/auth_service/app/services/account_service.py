@@ -20,6 +20,7 @@ from app.schemas.account import (
     EnableAccountResponse,
 )
 from app.services.password_service import PasswordService
+from app.services.user_state_service import UserStateService
 from sqlalchemy.orm import Session
 
 from shared.exceptions.auth import BlockedUserError, InvalidCredentialsError
@@ -91,6 +92,7 @@ class AccountService:
             self._db.rollback()
             raise
 
+        UserStateService.invalidate(user.id)
         logger.info("Account disabled user_id=%s", user.id)
         self._audit(
             "user_disabled_account",
@@ -139,6 +141,7 @@ class AccountService:
             self._db.rollback()
             raise
 
+        UserStateService.invalidate(user.id)
         logger.info("Account enabled user_id=%s", user.id)
         self._audit(
             "user_enabled_account",
@@ -179,6 +182,7 @@ class AccountService:
             self._db.rollback()
             raise
 
+        UserStateService.invalidate(user_id)
         publish_account_deleted(user_id, email=email)
 
         logger.info("Account deleted user_id=%s", user_id)

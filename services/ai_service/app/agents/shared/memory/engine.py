@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -77,11 +78,26 @@ class MemoryEngine:
         assistant_response: str,
         context: dict[str, Any] | None = None,
         follow_up_questions: list[str] | None = None,
+        message_type: str | None = None,
     ) -> None:
         existing = self.load(session_id)
         recent = list(existing.get("recent_messages", [])) if existing else []
-        recent.append({"role": "user", "content": user_message})
-        recent.append({"role": "assistant", "content": assistant_response})
+        timestamp = datetime.now(timezone.utc).isoformat()
+        user_entry: dict[str, Any] = {
+            "role": "user",
+            "content": user_message,
+            "timestamp": timestamp,
+        }
+        assistant_entry: dict[str, Any] = {
+            "role": "assistant",
+            "content": assistant_response,
+            "timestamp": timestamp,
+        }
+        if message_type:
+            user_entry["message_type"] = message_type
+            assistant_entry["message_type"] = message_type
+        recent.append(user_entry)
+        recent.append(assistant_entry)
         recent = self._pruner.prune_recent_messages(recent)
 
         long_term = list(existing.get("long_term", [])) if existing else []

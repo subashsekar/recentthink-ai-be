@@ -25,6 +25,18 @@ PROXY_RETRY_BASE_DELAY_S: float = float(os.getenv("GATEWAY_RETRY_BASE_DELAY_S", 
 # Health probe timeout when checking downstream services.
 HEALTH_PROBE_TIMEOUT: float = float(os.getenv("GATEWAY_HEALTH_PROBE_TIMEOUT", "2.0"))
 
+# Session guard: verify JWT + live Auth user state before forwarding.
+# Default enabled. Set GATEWAY_SESSION_GUARD_ENABLED=false only for emergencies.
+SESSION_GUARD_ENABLED: bool = os.getenv(
+    "GATEWAY_SESSION_GUARD_ENABLED", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+# Optional gateway-side cache for Auth user-state responses. Default 0 = always
+# ask Auth (immediate block/deactivate). Raise slightly under high traffic.
+USER_STATE_CACHE_TTL_SECONDS: float = float(
+    os.getenv("GATEWAY_USER_STATE_CACHE_TTL_SECONDS", "0")
+)
+
 # Comma-separated hosts for TrustedHostMiddleware. Use ``*`` to allow all
 # (default for local/test). Production should set explicit hostnames.
 _trusted_raw = os.getenv("GATEWAY_TRUSTED_HOSTS", "*")
@@ -43,8 +55,10 @@ __all__ = [
     "PROXY_RETRY_BASE_DELAY_S",
     "PROXY_WRITE_TIMEOUT",
     "SERVICE_NAME",
+    "SESSION_GUARD_ENABLED",
     "Settings",
     "TRUSTED_HOSTS",
+    "USER_STATE_CACHE_TTL_SECONDS",
     "get_settings",
     "settings",
 ]

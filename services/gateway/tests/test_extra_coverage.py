@@ -10,6 +10,7 @@ import pytest
 
 from app.proxy.client import build_upstream_client
 from app.services.health_service import _aggregate_status, _classify_latency
+from auth_helpers import make_access_token, with_user_state
 
 
 @pytest.fixture
@@ -53,17 +54,21 @@ async def make_gateway_client(
 async def test_account_and_notifications_forward(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(f"{request.url.host}{request.url.path}")
         return httpx.Response(200, json={"ok": True})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
-        r1 = await client.get("/account/status", headers={"Authorization": "Bearer x"})
-        r2 = await client.get("/notifications", headers={"Authorization": "Bearer x"})
-        r3 = await client.get("/notifications/1", headers={"Authorization": "Bearer x"})
-        r4 = await client.get("/account", headers={"Authorization": "Bearer x"})
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
+        auth = {"Authorization": f"Bearer {token}"}
+        r1 = await client.get("/account/status", headers=auth)
+        r2 = await client.get("/notifications", headers=auth)
+        r3 = await client.get("/notifications/1", headers=auth)
+        r4 = await client.get("/account", headers=auth)
 
     assert r1.status_code == 200
     assert r2.status_code == 200
@@ -79,24 +84,24 @@ async def test_account_and_notifications_forward(
 async def test_courses_dsa_and_users_routes(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.path)
         return httpx.Response(200, json={"ok": True})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
+        auth = {"Authorization": f"Bearer {token}"}
+        assert (await client.get("/courses/history", headers=auth)).status_code == 200
         assert (
-            await client.get("/courses/history", headers={"Authorization": "Bearer x"})
+            await client.get("/dsa-pattern/examples", headers=auth)
         ).status_code == 200
+        assert (await client.get("/users/me", headers=auth)).status_code == 200
         assert (
-            await client.get("/dsa-pattern/examples", headers={"Authorization": "Bearer x"})
-        ).status_code == 200
-        assert (
-            await client.get("/users/me", headers={"Authorization": "Bearer x"})
-        ).status_code == 200
-        assert (
-            await client.get("/users/search?q=jane", headers={"Authorization": "Bearer x"})
+            await client.get("/users/search?q=jane", headers=auth)
         ).status_code == 200
         assert (await client.get("/media/avatars/test.jpg")).status_code == 200
 
@@ -105,7 +110,6 @@ async def test_courses_dsa_and_users_routes(
     assert "/users/me" in seen
     assert "/profile/search" in seen
     assert "/media/avatars/test.jpg" in seen
-
 
 @pytest.mark.asyncio
 async def test_read_timeout_returns_504(

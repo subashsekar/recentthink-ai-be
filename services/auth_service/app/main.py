@@ -12,6 +12,7 @@ from app.api.database import router as database_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.health import router as health_router
 from app.api.internal_admin import router as internal_admin_router
+from app.api.internal_auth import router as internal_auth_router
 from app.core.config import SERVICE_NAME
 from app.core.rate_limit import limiter
 from fastapi import FastAPI
@@ -72,6 +73,7 @@ app.include_router(auth_router)
 app.include_router(account_router)
 app.include_router(admin_router)
 app.include_router(internal_admin_router)
+app.include_router(internal_auth_router)
 
 # Service name available for logging and monitoring context.
 app.state.service_name = SERVICE_NAME

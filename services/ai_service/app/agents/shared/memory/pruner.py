@@ -41,7 +41,15 @@ class ContextPruner:
         if len(serialized) <= self._max_context:
             return context
         pruned: dict[str, Any] = {}
-        for key in ("problem", "planner_output", "teacher_output", "feature"):
+        for key in (
+            "problem",
+            "planner_output",
+            "teacher_output",
+            "coder_output",
+            "evaluator_output",
+            "code_explainer_output",
+            "feature",
+        ):
             if key in context:
                 pruned[key] = context[key]
         return pruned or {"truncated": True}

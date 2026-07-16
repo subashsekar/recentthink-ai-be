@@ -55,6 +55,7 @@ class ConversationMemoryService:
         follow_up_questions: list[str] | None = None,
         context: dict[str, Any] | None = None,
         user_message: str | None = None,
+        message_type: str | None = None,
     ) -> None:
         self._engine.append_exchange(
             session_id=session_id,
@@ -63,6 +64,7 @@ class ConversationMemoryService:
             assistant_response=response_summary,
             context=context,
             follow_up_questions=follow_up_questions,
+            message_type=message_type,
         )
 
     def build_prompt_context(self, session_id: UUID) -> dict[str, Any]:

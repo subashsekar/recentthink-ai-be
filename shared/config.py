@@ -194,7 +194,7 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-2.5-flash"
+    openrouter_model: str = "deepseek/deepseek-chat"
     openrouter_timeout_seconds: int = 120
 
     # --- File storage -----------------------------------------------------

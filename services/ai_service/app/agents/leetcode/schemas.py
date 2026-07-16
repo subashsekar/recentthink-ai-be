@@ -368,6 +368,8 @@ class FollowUpResponse(BaseModel):
     total_tokens: int = 0
     latency_ms: int = 0
     execution_time_ms: int = 0
+    context_match: bool = True
+    rejected: bool = False
 
 
 class LeetCodeAgentInfoResponse(BaseModel):

@@ -30,17 +30,18 @@ class AIServiceSettings(BaseSettings):
     prompt_default_version: str = "v1"
     prompt_default_locale: str = "en"
     available_models: str = (
-        "google/gemini-2.5-flash,"
         "deepseek/deepseek-chat,"
-        "meta-llama/llama-3.3-70b-instruct,"
         "openai/gpt-4o,"
+        "google/gemini-2.5-flash,"
+        "meta-llama/llama-3.3-70b-instruct,"
         "nvidia/llama-3.1-nemotron-ultra-253b-v1"
     )
     model_cost_per_1k_input_tokens: float = 0.00015
     model_cost_per_1k_output_tokens: float = 0.0006
     usd_to_inr_rate: float = Field(default=83.0, ge=1.0)
-    openrouter_fallback_model: str = "openai/gpt-4o-mini"
-    json_validation_max_retries: int = Field(default=1, ge=0, le=3)
+    # Prefer a broadly available model when gemini returns 404 / provider gaps.
+    openrouter_fallback_model: str = "deepseek/deepseek-chat"
+    json_validation_max_retries: int = Field(default=2, ge=0, le=3)
     max_user_message_length: int = 32000
 
     # --- In-memory response cache (free; no Redis) ------------------------
@@ -57,8 +58,8 @@ class AIServiceSettings(BaseSettings):
     # only if needed — prefer FEATURE_MAX_TOKENS in feature_tokens.py as source).
     feature_max_tokens_leetcode: int = Field(default=1800, ge=1)
     feature_max_tokens_hackerrank: int = Field(default=1800, ge=1)
-    feature_max_tokens_dsa_pattern: int = Field(default=3000, ge=1)
-    feature_max_tokens_course_generator: int = Field(default=4500, ge=1)
+    feature_max_tokens_dsa_pattern: int = Field(default=8192, ge=1)
+    feature_max_tokens_course_generator: int = Field(default=12288, ge=1)
     feature_max_tokens_interview: int = Field(default=2200, ge=1)
 
 

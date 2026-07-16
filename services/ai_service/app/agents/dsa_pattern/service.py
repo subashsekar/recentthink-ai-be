@@ -8,6 +8,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
 
+from fastapi import HTTPException, status
+
 from app.agents.dsa_pattern.adapter import (
     build_chat_message,
     build_pattern_context,
@@ -133,16 +135,25 @@ class DsaPatternService:
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:
-                raise RuntimeError(
-                    "DSA pattern generation failed — OpenRouter returned no usable content "
-                    "(check API key / billing credits).",
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "DSA pattern generation failed — the model returned no usable JSON. "
+                        "Try another model (e.g. deepseek/deepseek-chat or openai/gpt-4o) "
+                        "and confirm OpenRouter credits."
+                    ),
                 )
 
             content = extract_pattern_from_chat(chat_response)
             if not _pattern_content_is_usable(content):
-                raise RuntimeError(
-                    "DSA pattern generation returned empty lesson content. "
-                    "OpenRouter may be out of credits or the model returned an empty payload.",
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "DSA pattern generation returned empty lesson content. "
+                        "Usually the model output was truncated or invalid JSON. "
+                        "Switch model in the dropdown and retry "
+                        "(recommended: deepseek/deepseek-chat or openai/gpt-4o)."
+                    ),
                 )
             title = content.overview.pattern or request.pattern
             if title and not title.lower().startswith("dsa"):

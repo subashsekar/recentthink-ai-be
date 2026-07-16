@@ -1,7 +1,9 @@
 """Reusable reverse-proxy for Gateway → downstream microservices.
 
-Forwards method, headers, query params, and body unchanged. Does not validate
-JWT or apply business rules — downstream services own auth and validation.
+Forwards method, headers, query params, and body unchanged. When a Bearer
+access token is present, the session guard verifies JWT validity and live
+Auth user state (``is_active`` / ``is_blocked`` / ``role`` / ``pwd_ts``)
+before forwarding. Downstream services still own fine-grained authorization.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import httpx
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.auth.session_guard import enforce_session
 from app.core.config import PROXY_MAX_RETRIES, PROXY_RETRY_BASE_DELAY_S
 from app.proxy.constants import HOP_BY_HOP_HEADERS
 from shared.middleware.request_id import REQUEST_ID_HEADER
@@ -109,9 +112,14 @@ async def proxy_to_upstream(
 ) -> Response:
     """Forward ``request`` to ``upstream_path`` on ``upstream_client``.
 
-    Authorization and other headers are forwarded as-is. JWT validation is
-    intentionally left to the downstream service.
+    When a Bearer access token is present, the session guard rejects blocked,
+    deactivated, role-mismatched, or password-invalidated sessions before the
+    request reaches downstream services. Public credential routes are skipped.
     """
+    denied = await enforce_session(request)
+    if denied is not None:
+        return denied
+
     request_id = _request_id(request)
     start = time.perf_counter()
 

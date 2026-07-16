@@ -32,10 +32,16 @@ class LLMResponse:
     latency_ms: int
     estimated_cost: float
     temperature: float = 0.2
+    finish_reason: str | None = None
 
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def truncated(self) -> bool:
+        reason = (self.finish_reason or "").strip().lower()
+        return reason in {"length", "max_tokens", "truncated"}
 
 
 class OpenRouterClient:
@@ -174,11 +180,17 @@ class OpenRouterClient:
             except httpx.HTTPStatusError as exc:
                 last_error = exc
                 status = exc.response.status_code
+                body_preview = ""
+                try:
+                    body_preview = (exc.response.text or "")[:400]
+                except Exception:
+                    body_preview = ""
                 if status not in _RETRYABLE_STATUS_CODES or attempt >= max_retries:
                     logger.error(
-                        "OpenRouter HTTP error after %s attempts: %s",
+                        "OpenRouter HTTP error after %s attempts: %s body=%s",
                         attempt + 1,
                         exc,
+                        body_preview,
                     )
                     raise
                 wait = backoff * (2**attempt)
@@ -211,11 +223,24 @@ class OpenRouterClient:
             raise last_error
 
         latency_ms = int((time.perf_counter() - start) * 1000)
-        content = data["choices"][0]["message"]["content"]
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") if isinstance(choice, dict) else {}
+        content = ""
+        if isinstance(message, dict):
+            raw_content = message.get("content")
+            if isinstance(raw_content, str):
+                content = raw_content
+            elif isinstance(raw_content, list):
+                # Some providers return content parts.
+                content = "".join(
+                    str(part.get("text", "")) if isinstance(part, dict) else str(part)
+                    for part in raw_content
+                )
         usage = data.get("usage", {})
         response_model = str(data.get("model", model))
         prompt_tokens = int(usage.get("prompt_tokens", 0))
         completion_tokens = int(usage.get("completion_tokens", 0))
+        finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else None
         provider = self.parse_provider(response_model)
         cost = self._cost.estimate_request_cost(
             input_tokens=prompt_tokens,
@@ -231,6 +256,7 @@ class OpenRouterClient:
             latency_ms=latency_ms,
             estimated_cost=cost.usd,
             temperature=temperature,
+            finish_reason=str(finish_reason) if finish_reason else None,
         )
 
     async def stream_completion(

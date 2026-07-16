@@ -55,9 +55,11 @@ def build_chat_message(request: GenerateCourseRequest) -> str:
         f"- roadmap for all {weeks} weeks with daily topics\n"
         f"- at least {min_lessons} full lessons with concept_explanation, examples, analogies\n"
         f"- at least {weeks} quizzes (5+ questions each) with flashcards\n"
-        f"- at least {weeks} assignments with tasks and coding exercises\n"
-        f"- 4 projects (beginner, intermediate, advanced, resume)\n"
-        f"- weekly assessments + one final assessment\n"
+        f"- at least {weeks} DETAILED assignments: description, >=4 tasks with done criteria, "
+        f">=2 coding_exercises with I/O examples, >=3 review_questions, estimated_hours\n"
+        f"- forbid shallow bullets like only 'Install Python' / 'Print your name'\n"
+        f"- 4 projects with distinct levels (beginner, intermediate, advanced, resume)\n"
+        f"- weekly assessments + one final assessment with questions, rubric, scoring\n"
         f"- 8+ resources, learning tips, adaptive recommendations\n"
         f"Return the full course JSON now."
     )
@@ -370,6 +372,8 @@ def to_follow_up_response(response: PlatformFollowUpResponse) -> FollowUpRespons
         total_tokens=response.total_tokens,
         latency_ms=response.latency_ms,
         execution_time_ms=response.execution_time_ms,
+        context_match=response.context_match,
+        rejected=response.rejected,
     )
 
 
@@ -402,16 +406,46 @@ def content_to_markdown(content: CourseContent, *, include: list[str] | None = N
     if "assignments" in wanted and content.assignments:
         sections.append("\n## Assignments\n")
         for item in content.assignments:
-            sections.append(f"### {item.title}\n{item.description}")
-            sections.extend(f"- {task}" for task in item.tasks)
+            week_label = f" (Week {item.week})" if item.week is not None else ""
+            hours_label = (
+                f"\n**Estimated hours:** {item.estimated_hours}"
+                if item.estimated_hours is not None
+                else ""
+            )
+            sections.append(f"### {item.title}{week_label}\n")
+            if item.type:
+                sections.append(f"**Type:** {item.type}")
+            if item.description:
+                sections.append(f"\n{item.description}{hours_label}\n")
+            elif hours_label:
+                sections.append(hours_label + "\n")
+            if item.tasks:
+                sections.append("\n**Tasks**")
+                sections.extend(f"- {task}" for task in item.tasks)
+            if item.coding_exercises:
+                sections.append("\n**Coding exercises**")
+                sections.extend(f"- {exercise}" for exercise in item.coding_exercises)
+            if item.review_questions:
+                sections.append("\n**Review questions**")
+                sections.extend(f"- {question}" for question in item.review_questions)
     if "projects" in wanted and content.projects:
         sections.append("\n## Projects\n")
         for project in content.projects:
             sections.append(f"### {project.title} ({project.level})\n")
             sections.append(project.description)
+            if project.requirements:
+                sections.append("\n**Requirements**")
+                sections.extend(f"- {req}" for req in project.requirements)
+            if project.architecture:
+                sections.append(f"\n**Architecture:** {project.architecture}")
             if project.implementation_steps:
-                sections.append("\nSteps:")
+                sections.append("\n**Steps:**")
                 sections.extend(f"{i}. {step}" for i, step in enumerate(project.implementation_steps, 1))
+            if project.expected_output:
+                sections.append(f"\n**Expected output:** {project.expected_output}")
+            if project.evaluation_criteria:
+                sections.append("\n**Evaluation criteria**")
+                sections.extend(f"- {item}" for item in project.evaluation_criteria)
     if "quiz" in wanted and content.quizzes:
         sections.append("\n## Quizzes\n")
         for quiz in content.quizzes:
@@ -421,8 +455,21 @@ def content_to_markdown(content: CourseContent, *, include: list[str] | None = N
     if "assessment" in wanted and content.assessments:
         sections.append("\n## Assessments\n")
         for assessment in content.assessments:
-            sections.append(f"### {assessment.title}\n")
-            sections.extend(f"- {q}" for q in assessment.questions)
+            week_label = f" (Week {assessment.week})" if assessment.week is not None else ""
+            sections.append(f"### {assessment.title}{week_label}\n")
+            if assessment.type:
+                sections.append(f"**Type:** {assessment.type}")
+            if assessment.questions:
+                sections.append("\n**Questions**")
+                sections.extend(f"- {q}" for q in assessment.questions)
+            if assessment.rubric:
+                sections.append("\n**Rubric**")
+                sections.extend(f"- {item}" for item in assessment.rubric)
+            if assessment.scoring:
+                sections.append(f"\n**Scoring:** {assessment.scoring}")
+            if assessment.completion_criteria:
+                sections.append("\n**Completion criteria**")
+                sections.extend(f"- {item}" for item in assessment.completion_criteria)
     if "resources" in wanted and content.resources:
         sections.append("\n## Resources\n")
         for resource in content.resources:

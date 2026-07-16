@@ -16,10 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from shared.config import get_settings
+from shared.constants import DEFAULT_APP_VERSION
 from shared.middleware.request_id import RequestIdMiddleware
 from shared.monitoring.sentry import init_sentry
 
-APP_VERSION = "0.1.0"
+APP_VERSION = DEFAULT_APP_VERSION
 
 
 @asynccontextmanager

@@ -26,7 +26,7 @@ from shared.config import get_settings
 from shared.middleware.request_id import RequestIdMiddleware
 from shared.monitoring.sentry import init_sentry
 
-APP_VERSION = "0.3.0"
+from shared.constants import AI_SERVICE_APP_VERSION
 
 
 @asynccontextmanager
@@ -40,7 +40,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="RecentThink AI Service",
-    version=APP_VERSION,
+    version=AI_SERVICE_APP_VERSION,
     lifespan=lifespan,
 )
 

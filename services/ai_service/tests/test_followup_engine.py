@@ -25,6 +25,23 @@ def test_classify_did_not_understand() -> None:
     assert engine.classify("I didn't understand that") == FollowUpIntent.DID_NOT_UNDERSTAND
 
 
+def test_classify_show_solution() -> None:
+    engine = FollowUpEngine()
+    assert engine.classify("Show Python solution") == FollowUpIntent.SHOW_SOLUTION
+    assert engine.classify("Show me the code") == FollowUpIntent.SHOW_SOLUTION
+
+
+def test_classify_optimize() -> None:
+    engine = FollowUpEngine()
+    assert engine.classify("Optimize memory usage") == FollowUpIntent.OPTIMIZE
+
+
+def test_classify_generate_practice() -> None:
+    engine = FollowUpEngine()
+    assert engine.classify("Generate another quiz") == FollowUpIntent.GENERATE_PRACTICE
+    assert engine.classify("Expand lesson 3") == FollowUpIntent.GENERATE_PRACTICE
+
+
 def test_resolve_prompt_module_analogy() -> None:
     engine = FollowUpEngine()
     assert engine.resolve_prompt_module(FollowUpIntent.EXPLAIN_ANALOGY) == "analogy"

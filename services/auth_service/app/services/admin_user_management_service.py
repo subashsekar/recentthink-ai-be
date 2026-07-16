@@ -17,6 +17,7 @@ from app.schemas.admin_users import (
     AdminUserResponse,
     AdminUserIdsResponse,
 )
+from app.services.user_state_service import UserStateService
 from sqlalchemy.orm import Session
 
 from shared.exceptions.base import BusinessException
@@ -114,6 +115,7 @@ class AdminUserManagementService:
             blocked_reason=reason,
         )
         self._refresh_tokens.revoke_all_tokens(user_id)
+        UserStateService.invalidate(user_id)
         log_security_event(
             "admin_blocked_user",
             admin_id=str(actor_id),
@@ -142,6 +144,7 @@ class AdminUserManagementService:
             blocked_at=None,
             blocked_reason=None,
         )
+        UserStateService.invalidate(user_id)
         log_security_event(
             "admin_unblocked_user",
             admin_id=str(actor_id),
@@ -171,6 +174,7 @@ class AdminUserManagementService:
             disabled_at=datetime.now(tz=UTC),
         )
         self._refresh_tokens.revoke_all_tokens(user_id)
+        UserStateService.invalidate(user_id)
         log_security_event(
             "admin_deactivated_user",
             admin_id=str(actor_id),
@@ -198,6 +202,7 @@ class AdminUserManagementService:
             is_active=True,
             disabled_at=None,
         )
+        UserStateService.invalidate(user_id)
         log_security_event(
             "admin_activated_user",
             admin_id=str(actor_id),
@@ -224,6 +229,7 @@ class AdminUserManagementService:
         except Exception:
             self._db.rollback()
             raise
+        UserStateService.invalidate(user_id)
         publish_account_deleted(user_id, email=user.email)
         log_security_event(
             "admin_deleted_user",

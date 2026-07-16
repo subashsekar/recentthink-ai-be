@@ -8,13 +8,14 @@ from __future__ import annotations
 from typing import Final
 
 # Sprint-defined feature limits (completion budget for ONE OpenRouter call).
+# DSA Pattern + Course need large nested JSON — low caps truncate and yield empty/sparse output.
 FEATURE_MAX_TOKENS: Final[dict[str, int]] = {
     "leetcode": 1800,
     "hackerrank": 1800,
-    "dsa": 3000,
-    "dsa_pattern": 3000,
-    "course_generator": 4500,
-    "course": 4500,
+    "dsa": 8192,
+    "dsa_pattern": 8192,
+    "course_generator": 12288,
+    "course": 12288,
     "interview": 2200,
 }
 

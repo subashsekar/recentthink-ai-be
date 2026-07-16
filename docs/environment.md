@@ -43,6 +43,11 @@ environment variables, then the repo-root `.env`. Docker Compose also applies
 | `AI_SERVICE_URL` | AI base URL |
 | `USAGE_SERVICE_URL` | Usage base URL |
 | `INTERNAL_SERVICE_TOKEN` | Shared service-to-service secret |
+| `GATEWAY_SESSION_GUARD_ENABLED` | Gateway live user-state check (`true` by default) |
+| `GATEWAY_USER_STATE_CACHE_TTL_SECONDS` | Optional gateway cache of Auth user-state (`0` = immediate) |
 
 Outside local/test, insecure defaults for `SECRET_KEY` and
 `INTERNAL_SERVICE_TOKEN` cause startup failure.
+
+Session enforcement (blocked / deactivated users) is documented in
+[session-enforcement.md](session-enforcement.md).

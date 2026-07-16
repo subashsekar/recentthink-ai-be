@@ -279,6 +279,7 @@ class WorkflowNodes:
                     }
 
             validated_payload: dict[str, Any] | None = None
+            attempt_max_tokens = max_tokens
             for json_attempt in range(max_json_retries + 1):
                 llm_calls += 1
                 response = await self._llm.chat_completion(
@@ -286,7 +287,7 @@ class WorkflowNodes:
                     user_prompt=user_prompt,
                     model=state.get("model"),
                     temperature=float(state.get("temperature", mode_cfg.generation.temperature)),
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max_tokens,
                     top_p=mode_cfg.generation.top_p,
                     frequency_penalty=mode_cfg.generation.frequency_penalty,
                     presence_penalty=mode_cfg.generation.presence_penalty,
@@ -294,9 +295,22 @@ class WorkflowNodes:
                 validation = self._validator.validate(response.content, UnifiedLLMResponse)
                 if not validation.success or validation.data is None:
                     last_validation_error = validation.error
+                    if response.truncated or not (response.content or "").rstrip().endswith("}"):
+                        # Truncated JSON is the usual cause of empty DSA/course payloads.
+                        attempt_max_tokens = min(16000, max(attempt_max_tokens + 2048, int(attempt_max_tokens * 1.75)))
+                        last_validation_error = (
+                            f"{last_validation_error or 'invalid JSON'} "
+                            f"(likely truncated; retrying with max_tokens={attempt_max_tokens})"
+                        )
                     logger.warning(
                         "llm_json_retry",
-                        extra={"attempt": json_attempt + 1, "error": last_validation_error},
+                        extra={
+                            "attempt": json_attempt + 1,
+                            "error": last_validation_error,
+                            "finish_reason": response.finish_reason,
+                            "max_tokens": attempt_max_tokens,
+                            "content_chars": len(response.content or ""),
+                        },
                     )
                     continue
 

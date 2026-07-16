@@ -7,6 +7,8 @@ import time
 from collections.abc import AsyncIterator
 from uuid import UUID
 
+from fastapi import HTTPException, status
+
 from app.agents.course_generator.adapter import (
     build_chat_message,
     build_course_context,
@@ -112,13 +114,34 @@ class CourseGeneratorService:
                 ),
             )
             if chat_response.status == SessionStatus.FAILED:
-                raise RuntimeError("Course generation workflow failed.")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "Course generation failed — the model returned no usable JSON. "
+                        "Try another model (deepseek/deepseek-chat or openai/gpt-4o) "
+                        "and confirm OpenRouter credits."
+                    ),
+                )
 
             content = extract_course_from_chat(chat_response)
             title = content.overview.title or f"{request.skill} Learning Path"
             content_dump = content.model_dump()
 
             weeks = max(4, request.duration_days // 7)
+            if (
+                not content.lessons
+                and not content.quizzes
+                and not content.projects
+                and not content.assignments
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "Course generation returned empty content. "
+                        "Usually the model output was truncated or invalid JSON. "
+                        "Switch model and retry (recommended: deepseek/deepseek-chat or openai/gpt-4o)."
+                    ),
+                )
             if len(content.lessons) < weeks or not content.quizzes or not content.projects:
                 logger.warning(
                     "course_content_sparse",

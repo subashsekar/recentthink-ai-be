@@ -235,6 +235,8 @@ def to_follow_up_response(response: PlatformFollowUpResponse) -> FollowUpRespons
         total_tokens=response.total_tokens,
         latency_ms=response.latency_ms,
         execution_time_ms=response.execution_time_ms,
+        context_match=response.context_match,
+        rejected=response.rejected,
     )
 
 

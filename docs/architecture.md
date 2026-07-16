@@ -59,8 +59,8 @@ every service:
 
 | Service | Port | Status | Responsibility |
 |-----------------|------|--------|----------------|
-| `gateway` | 8000 | **Done** | Public reverse proxy; JWT forward; SSE passthrough for `/chat/*`. |
-| `auth_service` | 8001 | **Done** | Register/login, JWT + refresh, email verify/reset, account disable/delete, admin identity mutations, internal admin APIs. |
+| `gateway` | 8000 | **Done** | Public reverse proxy; JWT + live user-state session guard; SSE passthrough for `/chat/*`. |
+| `auth_service` | 8001 | **Done** | Register/login, JWT + refresh, email verify/reset, account disable/delete, admin identity mutations, internal admin + user-state APIs. |
 | `user_service` | 8002 | **Done** | Profiles, avatars (local/Supabase), public profile/search, profile completion, learning-stats reads. |
 | `admin_service` | 8003 | **Done** | Dashboard, user management, usage/AI analytics aggregation, audit logs, notifications, feature flags, system health. |
 | `ai_service` | 8004 | **Done (~95%)** | LeetCode / HackerRank / Course Generator / DSA Pattern Coach; shared LangGraph + one OpenRouter call; chat SSE; cache; usage; internal purge. See [AI_SERVICE_COMPLETION_REPORT.md](AI_SERVICE_COMPLETION_REPORT.md). |
@@ -77,6 +77,7 @@ every service:
 | Chat / SSE streaming (`/chat/{feature}/*`) | **Done** |
 | Feature flags (Admin) | **Done** |
 | Account delete → AI/Usage orphan cleanup | **Done** |
+| Gateway session enforcement (block / deactivate) | **Done** — see [session-enforcement.md](session-enforcement.md) |
 | Interview Trainer | **Out of Scope** (not implemented) |
 | Quotas / billing invoices | Deferred |
 | K8s / Terraform / Helm / Prometheus / Grafana / OTel | Deferred (placeholders only) |

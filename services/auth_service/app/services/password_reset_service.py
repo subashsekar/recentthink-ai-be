@@ -15,6 +15,7 @@ from app.services.email.base import EmailService
 from app.services.email.templates import build_password_reset_email
 from app.services.one_time_token_validation import validate_one_time_token
 from app.services.password_service import PasswordService
+from app.services.user_state_service import UserStateService
 from sqlalchemy.orm import Session
 
 from shared.config import Settings, get_settings
@@ -157,4 +158,5 @@ class PasswordResetService:
             self._db.rollback()
             raise
 
+        UserStateService.invalidate(user.id)
         logger.info("Password successfully reset user_id=%s", user.id)

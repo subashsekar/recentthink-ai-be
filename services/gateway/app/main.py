@@ -108,7 +108,8 @@ app = FastAPI(
     version=APP_VERSION,
     description=(
         "Public reverse-proxy entry point for RecentThink. "
-        "Forwards requests to Auth, User, Admin, AI, and Usage services."
+        "Forwards requests to Auth, User, Admin, AI, and Usage services. "
+        "Enforces live user state (blocked / deactivated) on authenticated traffic."
     ),
     lifespan=lifespan,
 )

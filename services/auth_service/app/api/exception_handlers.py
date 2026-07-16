@@ -7,7 +7,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from shared.exceptions import DuplicateEmailError
+from shared.api.exception_handlers import (
+    INTERNAL_ERROR_DETAIL,
+    RATE_LIMIT_DETAIL,
+    error_response,
+    request_context,
+    validation_error_detail,
+)
 from shared.exceptions.auth import (
     AuthError,
     AuthenticationException,
@@ -28,31 +34,11 @@ from shared.exceptions.auth import (
 from shared.exceptions.base import BusinessException, DatabaseException, ValidationException
 from shared.exceptions.email import EmailDeliveryError
 from shared.exceptions.repository import RepositoryError
+from shared.exceptions import DuplicateEmailError
 from shared.logging import get_logger
 from shared.logging.security import log_security_event
 
 logger = get_logger(__name__)
-
-
-def _error_response(
-    *,
-    status_code: int,
-    detail: str,
-    code: str | None = None,
-) -> JSONResponse:
-    content: dict[str, str] = {"detail": detail}
-    if code is not None:
-        content["code"] = code
-    return JSONResponse(status_code=status_code, content=content)
-
-
-def _request_context(request: Request) -> dict[str, str]:
-    """Extract safe request metadata for logging."""
-    request_id = getattr(request.state, "request_id", None)
-    ctx: dict[str, str] = {"endpoint": request.url.path}
-    if request_id:
-        ctx["request_id"] = request_id
-    return ctx
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -63,7 +49,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: DuplicateEmailError,
     ) -> JSONResponse:
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
@@ -73,9 +59,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: InvalidCredentialsError,
     ) -> JSONResponse:
-        log_security_event("login_failure", **_request_context(request))
+        log_security_event("login_failure", **request_context(request))
         logger.warning("Authentication failure: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
             code=exc.code,
@@ -86,9 +72,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: AuthenticationException,
     ) -> JSONResponse:
-        log_security_event("unauthorized_access", **_request_context(request))
+        log_security_event("unauthorized_access", **request_context(request))
         logger.warning("Authentication failure: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
             code=exc.code,
@@ -99,7 +85,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: UserNotFoundError,
     ) -> JSONResponse:
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         )
@@ -109,9 +95,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: InactiveUserError,
     ) -> JSONResponse:
-        log_security_event("forbidden_access", reason="inactive", **_request_context(request))
+        log_security_event("forbidden_access", reason="inactive", **request_context(request))
         logger.warning("Inactive user access attempt: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         )
@@ -121,9 +107,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: BlockedUserError,
     ) -> JSONResponse:
-        log_security_event("forbidden_access", reason="blocked", **_request_context(request))
+        log_security_event("forbidden_access", reason="blocked", **request_context(request))
         logger.warning("Blocked user access attempt: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
             code="ACCOUNT_BLOCKED",
@@ -134,9 +120,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: InvalidTokenError,
     ) -> JSONResponse:
-        log_security_event("unauthorized_access", reason="invalid_token", **_request_context(request))
+        log_security_event("unauthorized_access", reason="invalid_token", **request_context(request))
         logger.warning("Invalid token: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         )
@@ -146,9 +132,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: ExpiredTokenError,
     ) -> JSONResponse:
-        log_security_event("unauthorized_access", reason="expired_token", **_request_context(request))
+        log_security_event("unauthorized_access", reason="expired_token", **request_context(request))
         logger.warning("Expired token: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         )
@@ -158,9 +144,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RevokedTokenError,
     ) -> JSONResponse:
-        log_security_event("unauthorized_access", reason="revoked_token", **_request_context(request))
+        log_security_event("unauthorized_access", reason="revoked_token", **request_context(request))
         logger.warning("Revoked token: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         )
@@ -171,7 +157,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: UsedTokenError,
     ) -> JSONResponse:
         logger.warning("Used token: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
@@ -181,9 +167,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: EmailNotVerifiedError,
     ) -> JSONResponse:
-        log_security_event("forbidden_access", reason="email_not_verified", **_request_context(request))
+        log_security_event("forbidden_access", reason="email_not_verified", **request_context(request))
         logger.warning("Email not verified: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
             code=exc.code or "EMAIL_NOT_VERIFIED",
@@ -194,7 +180,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: EmailAlreadyVerifiedError,
     ) -> JSONResponse:
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
@@ -205,7 +191,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: PasswordReuseError,
     ) -> JSONResponse:
         logger.warning("Password reuse rejected: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
@@ -216,7 +202,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: EmailDeliveryError,
     ) -> JSONResponse:
         logger.error("Email delivery failure: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send email. Please try again later.",
         )
@@ -226,9 +212,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: AuthorizationException,
     ) -> JSONResponse:
-        log_security_event("forbidden_access", **_request_context(request))
+        log_security_event("forbidden_access", **request_context(request))
         logger.warning("Authorization denied: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
             code=exc.code,
@@ -239,9 +225,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: ForbiddenError,
     ) -> JSONResponse:
-        log_security_event("forbidden_access", **_request_context(request))
+        log_security_event("forbidden_access", **request_context(request))
         logger.warning("Authorization denied: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         )
@@ -251,7 +237,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: ValidationException,
     ) -> JSONResponse:
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
             code=exc.code,
@@ -263,9 +249,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: DatabaseException,
     ) -> JSONResponse:
         logger.error("Database error: %s", exc, exc_info=True)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred. Please try again later.",
+            detail=INTERNAL_ERROR_DETAIL,
         )
 
     @app.exception_handler(RepositoryError)
@@ -274,9 +260,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: RepositoryError,
     ) -> JSONResponse:
         logger.error("Repository error: %s", exc, exc_info=True)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred. Please try again later.",
+            detail=INTERNAL_ERROR_DETAIL,
         )
 
     @app.exception_handler(RateLimitExceeded)
@@ -285,9 +271,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: RateLimitExceeded,
     ) -> JSONResponse:
         logger.warning("Rate limit exceeded: %s", exc.detail)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests. Please try again later.",
+            detail=RATE_LIMIT_DETAIL,
         )
 
     @app.exception_handler(AuthError)
@@ -296,7 +282,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: AuthError,
     ) -> JSONResponse:
         logger.warning("Auth error: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
@@ -307,7 +293,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: BusinessException,
     ) -> JSONResponse:
         logger.warning("Business error: %s", exc)
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
             code=exc.code,
@@ -318,9 +304,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        errors = exc.errors()
-        detail = errors[0]["msg"] if errors else "Validation error."
-        return _error_response(
+        detail = validation_error_detail(exc)
+        return error_response(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=detail,
         )
@@ -335,7 +320,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             request.method,
             request.url.path,
         )
-        return _error_response(
+        return error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred. Please try again later.",
+            detail=INTERNAL_ERROR_DETAIL,
         )

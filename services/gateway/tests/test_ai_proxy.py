@@ -7,6 +7,8 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 import pytest
 
+from auth_helpers import make_access_token, with_user_state
+
 
 @pytest.fixture
 async def gateway_app() -> AsyncIterator[object]:
@@ -48,7 +50,7 @@ async def make_gateway_client(
             await u.aclose()
 
 
-# --- Auth forwarding (gateway does NOT validate JWT) ----------------------
+# --- Auth forwarding (session guard skips when no Bearer) -----------------
 
 
 @pytest.mark.asyncio
@@ -90,14 +92,18 @@ async def test_auth_login_forwards_body(
 async def test_forwards_authorization_bearer_token(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers.get("authorization") == "Bearer test.jwt"
+        assert request.headers.get("authorization") == f"Bearer {token}"
         return httpx.Response(200, json={"ok": True})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.get(
             "/profile",
-            headers={"Authorization": "Bearer test.jwt"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 200
@@ -107,21 +113,25 @@ async def test_forwards_authorization_bearer_token(
 async def test_forwards_path_query_and_custom_headers(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/leetcode/history/abc-123"
         assert request.url.params.get("limit") == "10"
-        assert request.headers.get("authorization") == "Bearer test.jwt"
+        assert request.headers.get("authorization") == f"Bearer {token}"
         assert request.headers.get("x-request-id") == "rid-1"
         assert request.headers.get("accept") == "application/json"
         assert request.headers.get("x-custom-client") == "fe"
         return httpx.Response(200, json={"ok": True}, headers={"X-Upstream": "yes"})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.get(
             "/leetcode/history/abc-123?limit=10",
             headers={
-                "Authorization": "Bearer test.jwt",
+                "Authorization": f"Bearer {token}",
                 "X-Request-ID": "rid-1",
                 "Accept": "application/json",
                 "X-Custom-Client": "fe",
@@ -138,16 +148,23 @@ async def test_forwards_path_query_and_custom_headers(
 async def test_forwards_json_body_on_patch(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "PATCH"
         assert request.url.path == "/leetcode/history/abc-123"
         assert request.content == b'{"model_id":"openai/gpt-4o-mini"}'
-        return httpx.Response(200, json={"id": "abc-123", "model_id": "openai/gpt-4o-mini"})
+        return httpx.Response(
+            200,
+            json={"id": "abc-123", "model_id": "openai/gpt-4o-mini"},
+        )
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.patch(
             "/leetcode/history/abc-123",
-            headers={"Authorization": "Bearer test.jwt"},
+            headers={"Authorization": f"Bearer {token}"},
             json={"model_id": "openai/gpt-4o-mini"},
         )
 
@@ -162,15 +179,19 @@ async def test_forwards_json_body_on_patch(
 async def test_hackerrank_catchall_routes_to_ai(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/hackerrank/analyze"
         assert str(request.url).startswith("http://ai-service/")
         return httpx.Response(200, json={"ok": True})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.post(
             "/hackerrank/analyze",
-            headers={"Authorization": "Bearer x"},
+            headers={"Authorization": f"Bearer {token}"},
             json={"problem_url": "x"},
         )
 
@@ -199,15 +220,19 @@ async def test_admin_login_routes_to_auth(
 async def test_admin_dashboard_routes_to_admin_service(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token(role="ADMIN")
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/admin/dashboard"
         assert str(request.url).startswith("http://admin-service/")
         return httpx.Response(200, json={"users": 1})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler, role="ADMIN"))
+    ) as client:
         resp = await client.get(
             "/admin/dashboard",
-            headers={"Authorization": "Bearer x"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
     assert resp.status_code == 200
@@ -235,6 +260,8 @@ async def test_usage_routes_to_usage_service(
 async def test_multipart_upload_forwarded(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/profile/avatar"
         ctype = request.headers.get("content-type", "")
@@ -242,10 +269,12 @@ async def test_multipart_upload_forwarded(
         assert b"fake-image-bytes" in request.content
         return httpx.Response(200, json={"profile_picture_url": "http://x/a.png"})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.post(
             "/profile/avatar",
-            headers={"Authorization": "Bearer x"},
+            headers={"Authorization": f"Bearer {token}"},
             files={"file": ("avatar.png", b"fake-image-bytes", "image/png")},
         )
 
@@ -260,6 +289,7 @@ async def test_multipart_upload_forwarded(
 async def test_retries_transient_connect_error_then_succeeds(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -269,8 +299,13 @@ async def test_retries_transient_connect_error_then_succeeds(
             raise httpx.ConnectError("boom", request=request)
         return httpx.Response(200, json={"attempts": attempts})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
-        resp = await client.get("/ai/models", headers={"Authorization": "Bearer x"})
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
+        resp = await client.get(
+            "/ai/models",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert resp.status_code == 200
     assert resp.json()["attempts"] == 2
@@ -306,6 +341,8 @@ class _Stream(httpx.AsyncByteStream):
 async def test_streaming_passthrough(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/leetcode/analyze"
         return httpx.Response(
@@ -314,10 +351,15 @@ async def test_streaming_passthrough(
             stream=_Stream([b"data: one\n\n", b"data: two\n\n"]),
         )
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
         resp = await client.post(
             "/leetcode/analyze?stream=true",
-            headers={"Authorization": "Bearer x", "Accept": "text/event-stream"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "text/event-stream",
+            },
             json={"problem_url": "x"},
         )
         body = await resp.aread()
@@ -357,12 +399,22 @@ async def test_cors_preflight_allows_localhost_3001(
 async def test_chat_proxy_forwards_to_ai_service(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/chat/leetcode/sessions"
-        return httpx.Response(200, json={"sessions": [], "total": 0, "limit": 50, "offset": 0})
+        return httpx.Response(
+            200,
+            json={"sessions": [], "total": 0, "limit": 50, "offset": 0},
+        )
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
-        resp = await client.get("/chat/leetcode/sessions", headers={"Authorization": "Bearer x"})
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
+        resp = await client.get(
+            "/chat/leetcode/sessions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert resp.status_code == 200
 
@@ -371,6 +423,7 @@ async def test_chat_proxy_forwards_to_ai_service(
 async def test_upstream_503_is_passed_through_after_retries(
     make_gateway_client: Callable[[httpx.BaseTransport], httpx.AsyncClient],
 ) -> None:
+    token, _uid = make_access_token()
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -378,8 +431,13 @@ async def test_upstream_503_is_passed_through_after_retries(
         calls += 1
         return httpx.Response(503, json={"detail": "busy"}, headers={"X-Upstream": "yes"})
 
-    async with make_gateway_client(httpx.MockTransport(handler)) as client:
-        resp = await client.get("/ai/models", headers={"Authorization": "Bearer x"})
+    async with make_gateway_client(
+        httpx.MockTransport(with_user_state(handler))
+    ) as client:
+        resp = await client.get(
+            "/ai/models",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert resp.status_code == 503
     assert resp.json()["detail"] == "busy"

@@ -10,6 +10,7 @@ from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.security.tokens import hash_token
 from app.services.password_service import PasswordService
+from app.services.user_state_service import UserStateService
 from sqlalchemy.orm import Session
 
 from shared.config import Settings, get_settings
@@ -72,6 +73,7 @@ class PasswordManagementService:
             self._db.rollback()
             raise
 
+        UserStateService.invalidate(user.id)
         logger.info("Password changed user_id=%s", user.id)
         log_security_event("password_change", user_id=str(user.id))
 
